@@ -88,7 +88,7 @@ object UpdateManager {
         } catch (e: Exception) {
             Log.w(TAG, "Update check failed: ${e.message}")
             val msg = when {
-                e.message?.contains("404") == true -> "مخزن یا انتشار رسمی (Release) یافت نشد ($owner/$repo)"
+                e.message?.contains("404") == true -> "هنوز هیچ انتشار رسمی (Release) در مخزن $owner/$repo ثبت نشده است"
                 e.message?.contains("403") == true -> "محدودیت نرخ دسترسی به گیت‌هاب؛ لطفاً کمی بعد تلاش کنید"
                 else -> e.localizedMessage ?: "خطا در اتصال به سرور گیت‌هاب"
             }

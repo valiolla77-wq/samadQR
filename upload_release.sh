@@ -6,7 +6,7 @@
 set -e
 
 TAG="${1:-v1.2.0}"
-REPO="${2:-mr-alirezaw/samad-food-qr}"
+REPO="${2:-valiolla77-wq/samadQR}"
 APK_PATH="release-apk/SamadFoodQR-v1.2.0.apk"
 
 if [ ! -f "$APK_PATH" ]; then

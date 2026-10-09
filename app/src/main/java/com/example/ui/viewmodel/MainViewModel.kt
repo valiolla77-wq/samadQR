@@ -69,7 +69,7 @@ data class MainUiState(
     val updateCheckResult: UpdateCheckResult? = null,
     val isDownloadingUpdate: Boolean = false,
     val downloadProgress: Float = 0f,
-    val githubRepo: String = "mr-alirezaw/samad-food-qr",
+    val githubRepo: String = "valiolla77-wq/samadQR",
     val autoCheckUpdates: Boolean = true,
     // Student Preferred Cafeteria state
     val preferredSelfName: String? = null,

@@ -113,7 +113,14 @@ class SecurePrefs(context: Context) {
 
     // GitHub Auto-Update preferences
     var githubRepo: String
-        get() = prefs.getString("github_repo", "mr-alirezaw/samad-food-qr") ?: "mr-alirezaw/samad-food-qr"
+        get() {
+            val saved = prefs.getString("github_repo", null)
+            return if (saved.isNullOrBlank() || saved == "mr-alirezaw/samad-food-qr") {
+                "valiolla77-wq/samadQR"
+            } else {
+                saved
+            }
+        }
         set(value) = prefs.edit().putString("github_repo", value.trim()).apply()
 
     var autoCheckUpdates: Boolean

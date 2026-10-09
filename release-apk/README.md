@@ -5,7 +5,7 @@
 1. **`SamadFoodQR-v1.2.0.apk`**
    - نسخه: `1.2.0` (versionCode: 2)
    - امضا شده با کلید تولید/توسعه
-   - چک‌سام SHA-256: `183fc25a39b74291b0e06e8696ac2749501ac1bde448e8878ab79af0e435ed82`
+   - چک‌سام SHA-256: `af9277bf0562ebc6be9d58535a2289b72100c1bb052217f84fe1e38a088ed612`
 
 2. **`SamadFoodQR-latest.apk`**
    - نسخه پایدار و آماده نصب
@@ -13,7 +13,7 @@
 ---
 
 ### راهنمای ایجاد Release در گیت‌هاب (دستی):
-1. به صفحه مخزن خود در GitHub بروید: `https://github.com/mr-alirezaw/samad-food-qr/releases/new`
+1. به صفحه مخزن خود در GitHub بروید: `https://github.com/valiolla77-wq/samadQR/releases/new`
 2. برچسب نسخه (Tag): `v1.2.0` یا `v1.3.0`
 3. عنوان (Release title): `انتشار نسخه ۱.۲.۰ سامانه سماد`
 4. فایل `release-apk/SamadFoodQR-v1.2.0.apk` را داخل کادر آپلود بکشید و رها کنید (Drag & Drop).
