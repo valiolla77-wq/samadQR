@@ -1,0 +1,6 @@
+{
+  "name": "Samad Food QR",
+  "description": "سامانه سماد - نمایش خودکار کد رزرو و QR غذای سلف دانشجویی دانشگاه فنی و حرفه ای",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

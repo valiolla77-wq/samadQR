@@ -1,0 +1,104 @@
+name: Build & Publish Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (e.g. v1.3.0)'
+        required: true
+        default: 'v1.3.0'
+      release_name:
+        description: 'Release Title'
+        required: false
+        default: 'انتشار نسخه جدید سامانه سماد'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release Signed APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Make Gradle executable
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: Prepare Signing Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/release.keystore" >> $GITHUB_ENV
+            echo "STORE_PASSWORD=${{ secrets.STORE_PASSWORD || 'android' }}" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD || 'android' }}" >> $GITHUB_ENV
+          elif [ -f "debug.keystore.base64" ]; then
+            cat debug.keystore.base64 | base64 -d > debug.keystore
+          fi
+
+      - name: Build Android APK
+        run: |
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleRelease || ./gradlew assembleDebug
+          else
+            gradle assembleRelease || gradle assembleDebug
+          fi
+
+      - name: Locate and Prepare Release APK
+        id: apk_locator
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ] || [ "$TAG" = "master" ]; then
+            TAG="${{ github.event.inputs.tag_name || 'v1.3.0' }}"
+          fi
+
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "Error: No APK found!"
+            exit 1
+          fi
+
+          OUTPUT_NAME="SamadFoodQR-${TAG}.apk"
+          cp "$APK_PATH" "$OUTPUT_NAME"
+          echo "apk_path=$OUTPUT_NAME" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG" >> $GITHUB_OUTPUT
+          echo "Found APK at $APK_PATH -> Prepared as $OUTPUT_NAME"
+
+      - name: Create GitHub Release & Upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.apk_locator.outputs.tag_name }}
+          name: ${{ github.event.inputs.release_name || steps.apk_locator.outputs.tag_name }}
+          body: |
+            ## 📱 انتشار نسخه جدید سامانه سماد (${{ steps.apk_locator.outputs.tag_name }})
+            
+            ### ✨ تغییرات این نسخه:
+            - 🏢 **انتخاب سلف دانشجو (سلف من):** قابلیت انتخاب سلف پیش‌فرض و نمایش هشدار هوشمند در صورت رزرو در سلف مغایر.
+            - 🚀 **سیستم بروزرسانی خودکار:** بررسی خودکار نسخه‌های جدید از طریق GitHub Releases با امکان دانلود و نصب مستقیم در داخل برنامه.
+            - 🔒 **حفاظت از حافظه پنهان و بارکدها:** پاکسازی کش تنها در صورت برقراری ارتباط موفق با سامانه، جهت جلوگیری از بی‌غذا ماندن دانشجو در مواقع قطعی سرور.
+            - ⚡ **رفع باگ نمایش سلف‌های رزرو‌نشده:** اعتبارسنجی دقیق رزروها بر اساس داده‌های سرور دانشگاه.
+            
+            ### 📥 دانلود و نصب:
+            فایل `SamadFoodQR-${{ steps.apk_locator.outputs.tag_name }}.apk` پیوست شده را دانلود و نصب نمایید.
+          files: ${{ steps.apk_locator.outputs.apk_path }}
+          draft: false
+          prerelease: false
