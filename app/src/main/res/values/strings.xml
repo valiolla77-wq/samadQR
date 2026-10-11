@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Samad Food QR</string>
+    <string name="app_title_fa">سماد فود QR</string>
+    <string name="university_title">دانشگاه فنی و حرفه ای</string>
+    <string name="login_title">ورود به سامانه سماد</string>
+    <string name="login_hint">همان اطلاعاتی که با آنها وارد samad.app می‌شوی</string>
+    <string name="username_label">شماره دانشجویی یا نام کاربری</string>
+    <string name="password_label">رمز عبور</string>
+    <string name="remember_password">ذخیره رمز عبور</string>
+    <string name="login_button">ورود به حساب</string>
+    <string name="logout_button">خروج از حساب کاربری</string>
+    <string name="fetch_reserves">دریافت رزروها</string>
+    <string name="no_reserves">رزروی یافت نشد</string>
+    <string name="connection_error">اتصال به سامانه برقرار نشد</string>
+    <string name="retry">تلاش مجدد</string>
+    <string name="offline_mode">حالت آفلاین</string>
+    <string name="status_active">فعال</string>
+    <string name="status_expired">منقضی شده</string>
+    <string name="widget_title">کد غذای سماد</string>
+    <string name="widget_no_food">وعده فعالی برای امروز یافت نشد</string>
+</resources>

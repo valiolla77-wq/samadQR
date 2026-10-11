@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_widget"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="6dp">
+
+    <!-- Compact Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="2dp">
+
+        <TextView
+            android:id="@+id/widget_meal_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="سماد فود"
+            android:textColor="#006B2C"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_status_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="سلف دانشگاه"
+            android:textColor="#5A6F62"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_food_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="1"
+        android:paddingBottom="2dp"
+        android:text="در حال بارگذاری..."
+        android:textColor="#132018"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <!-- Center QR Image View: EXPANDS to take all remaining space, maximum possible size -->
+    <ImageView
+        android:id="@+id/widget_qr_image"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#FFFFFF"
+        android:contentDescription="QR Code"
+        android:padding="2dp"
+        android:scaleType="fitCenter" />
+
+    <!-- Bottom 9-digit code in Persian numbers -->
+    <TextView
+        android:id="@+id/widget_code_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:gravity="center"
+        android:letterSpacing="0.05"
+        android:text="--- --- ---"
+        android:textColor="#006B2C"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+</LinearLayout>

@@ -1,0 +1,72 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+
+    <!-- Emerald Circular Badge Background -->
+    <path
+        android:fillColor="#00873A"
+        android:pathData="M64,64m-60,0a60,60 0,1,1 120,0a60,60 0,1,1 -120,0" />
+
+    <!-- Subtle inner emerald ring highlight -->
+    <path
+        android:strokeColor="#1FD66F"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.35"
+        android:pathData="M64,64m-56,0a56,56 0,1,1 112,0a56,56 0,1,1 -112,0" />
+
+    <!-- Stylized Modern White QR Code in Center -->
+    <!-- Top-Left Finder Outer Box -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,32h26v26h-26z M38,38v14h14v-14h-14z" />
+    <!-- Top-Left Finder Center Dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M41,41h8v8h-8z" />
+
+    <!-- Top-Right Finder Outer Box -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70,32h26v26h-26z M76,38v14h14v-14h-14z" />
+    <!-- Top-Right Finder Center Dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M79,41h8v8h-8z" />
+
+    <!-- Bottom-Left Finder Outer Box -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,70h26v26h-26z M38,76v14h14v-14h-14z" />
+    <!-- Bottom-Left Finder Center Dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M41,79h8v8h-8z" />
+
+    <!-- Timing Patterns / Data Modules (clean white grid modules) -->
+    <!-- Horizontal Timing -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M61,35h6v4h-6z M61,43h6v4h-6z M61,51h6v4h-6z" />
+
+    <!-- Vertical Timing & Center Modules -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35,61h4v6h-4z M43,61h4v6h-4z M51,61h4v6h-4z" />
+
+    <!-- Center Data Matrix Clusters -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M61,61h6v6h-6z M70,61h6v6h-6z M82,61h6v6h-6z M90,61h6v6h-6z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M61,70h6v6h-6z M73,70h6v6h-6z M85,70h11v6h-11z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M61,79h6v6h-6z M70,82h8v5h-8z M82,79h6v8h-6z M92,79h4v17h-4z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M61,88h6v8h-6z M70,90h8v6h-8z M82,90h7v6h-7z" />
+
+</vector>
