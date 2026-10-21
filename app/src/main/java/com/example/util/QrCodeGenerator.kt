@@ -2,29 +2,54 @@ package com.example.util
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.util.LruCache
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatWriter
+import com.google.zxing.WriterException
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.qrcode.encoder.ByteMatrix
 import com.google.zxing.qrcode.encoder.Encoder
 import com.google.zxing.qrcode.encoder.QRCode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object QrCodeGenerator {
 
+    sealed class QrResult {
+        data class Success(val bitmap: Bitmap) : QrResult()
+        data class Error(val message: String, val isTooLong: Boolean = false) : QrResult()
+    }
+
+    // Cache recently generated QR bitmaps to avoid repeated matrix allocation
+    private val qrBitmapCache = object : java.util.LinkedHashMap<String, Bitmap>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean {
+            return size > 16
+        }
+    }
+
     /**
-     * Generates QR matching Samad's system exactly:
-     * - Byte Mode (NOT Numeric!)
+     * Generates QR result matching Samad's system:
      * - ECC = H
-     * - Version = 2 (auto from Byte Mode)
+     * - Version = 2
      * - Margin = 4 (ISO/IEC 18004 standard quiet zone)
      * - Pure white background, pure black foreground
+     *
+     * Returns a clear error state if the input exceeds Version 2 / ECC H capacity.
      */
-    fun generateQrBitmap(code: String, size: Int = 800): Bitmap? {
-        if (code.isBlank()) return null
+    fun generateQrResult(code: String, size: Int = 800): QrResult {
+        if (code.isBlank()) {
+            return QrResult.Error("کد خالی است")
+        }
+
+        val cacheKey = "${code}_$size"
+        synchronized(qrBitmapCache) {
+            qrBitmapCache[cacheKey]?.let { cached ->
+                return QrResult.Success(cached)
+            }
+        }
 
         return try {
-            // Force Byte mode + ECC H + UTF-8
             val hints = mapOf(
                 EncodeHintType.CHARACTER_SET to "UTF-8",
                 EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.H,
@@ -32,8 +57,6 @@ object QrCodeGenerator {
                 EncodeHintType.MARGIN to 4,
             )
 
-            // ZXing's Encoder.encode with explicit byte data forces Byte mode
-            // We pass the string bytes to trick it out of Numeric mode
             val qrCode: QRCode = Encoder.encode(
                 code,
                 ErrorCorrectionLevel.H,
@@ -58,7 +81,6 @@ object QrCodeGenerator {
             for (y in 0 until matrixHeight) {
                 for (x in 0 until matrixWidth) {
                     if (matrix.get(x, y).toInt() == 1) {
-                        // Draw a scale x scale block
                         val startX = (x + margin) * scale
                         val startY = (y + margin) * scale
                         for (dy in 0 until scale) {
@@ -72,11 +94,39 @@ object QrCodeGenerator {
 
             val bitmap = Bitmap.createBitmap(finalSize, finalSize, Bitmap.Config.ARGB_8888)
             bitmap.setPixels(pixels, 0, finalSize, 0, 0, finalSize, finalSize)
-            bitmap
+
+            synchronized(qrBitmapCache) {
+                qrBitmapCache[cacheKey] = bitmap
+            }
+            QrResult.Success(bitmap)
+        } catch (we: WriterException) {
+            val msg = we.message ?: ""
+            val isTooLong = msg.contains("too big", ignoreCase = true) || msg.contains("capacity", ignoreCase = true)
+            QrResult.Error(
+                message = if (isTooLong) "طول داده برای بارکد نسخه ۲ فراتر از حد مجاز است" else "خطا در تولید بارکد: $msg",
+                isTooLong = isTooLong
+            )
         } catch (e: Exception) {
-            e.printStackTrace()
-            null
+            val msg = e.message ?: "خطای ناشناخته"
+            QrResult.Error(message = "خطا در تولید بارکد: $msg", isTooLong = false)
         }
+    }
+
+    /**
+     * Synchronous QR bitmap generator (cached)
+     */
+    fun generateQrBitmap(code: String, size: Int = 800): Bitmap? {
+        return when (val result = generateQrResult(code, size)) {
+            is QrResult.Success -> result.bitmap
+            is QrResult.Error -> null
+        }
+    }
+
+    /**
+     * Generates QR bitmap asynchronously off the main thread
+     */
+    suspend fun generateQrBitmapAsync(code: String, size: Int = 800): Bitmap? = withContext(Dispatchers.Default) {
+        generateQrBitmap(code, size)
     }
 
     /**
@@ -112,21 +162,40 @@ object QrCodeGenerator {
         }
     }
 
+    suspend fun generateBarcodeBitmapAsync(code: String, width: Int = 640, height: Int = 180): Bitmap? =
+        withContext(Dispatchers.Default) {
+            generateBarcodeBitmap(code, width, height)
+        }
+
     fun formatNineDigitCode(code: String, toPersian: Boolean = false): String {
         val clean = code.trim().filter { it.isDigit() }
-        val formatted = when {
-            clean.length == 9 -> "${clean.substring(0, 3)} ${clean.substring(3, 6)} ${clean.substring(6, 9)}"
-            clean.length > 6 -> "${clean.substring(0, 3)} ${clean.substring(3, 6)} ${clean.substring(6)}"
-            clean.length > 3 -> "${clean.substring(0, 3)} ${clean.substring(3)}"
-            else -> clean
-        }
-        return if (toPersian) {
+        if (clean.isEmpty()) return ""
+
+        val chunk1 = if (clean.length >= 3) clean.substring(0, 3) else clean
+        val chunk2 = if (clean.length >= 6) clean.substring(3, 6) else (if (clean.length > 3) clean.substring(3) else "")
+        val chunk3 = if (clean.length >= 9) clean.substring(6, 9) else (if (clean.length > 6) clean.substring(6) else "")
+
+        fun toFa(str: String): String {
             val persianDigits = charArrayOf('۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹')
             val sb = StringBuilder()
-            for (ch in formatted) {
+            for (ch in str) {
                 if (ch in '0'..'9') sb.append(persianDigits[ch - '0']) else sb.append(ch)
             }
-            sb.toString()
-        } else formatted
+            return sb.toString()
+        }
+
+        val c1 = if (toPersian) toFa(chunk1) else chunk1
+        val c2 = if (toPersian) toFa(chunk2) else chunk2
+        val c3 = if (toPersian) toFa(chunk3) else chunk3
+
+        // \u202A: Left-to-Right Embedding, \u200E: Left-to-Right Mark, \u202C: Pop Directional Formatting
+        // Guarantees left-to-right display in RTL widgets and text views
+        return if (c2.isNotEmpty() && c3.isNotEmpty()) {
+            "\u202A\u200E$c1\u200E — \u200E$c2\u200E — \u200E$c3\u200E\u202C"
+        } else if (c2.isNotEmpty()) {
+            "\u202A\u200E$c1\u200E — \u200E$c2\u200E\u202C"
+        } else {
+            "\u202A\u200E$c1\u200E\u202C"
+        }
     }
 }

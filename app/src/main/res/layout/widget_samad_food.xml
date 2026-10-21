@@ -65,13 +65,16 @@
         android:padding="2dp"
         android:scaleType="fitCenter" />
 
-    <!-- Bottom 9-digit code in Persian numbers -->
+    <!-- Bottom 9-digit code in Persian numbers (strictly LTR) -->
     <TextView
         android:id="@+id/widget_code_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
         android:layout_marginTop="2dp"
         android:gravity="center"
+        android:layoutDirection="ltr"
+        android:textDirection="ltr"
         android:letterSpacing="0.05"
         android:text="--- --- ---"
         android:textColor="#006B2C"

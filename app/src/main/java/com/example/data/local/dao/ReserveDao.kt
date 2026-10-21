@@ -61,6 +61,9 @@ interface ReserveDao {
     @Query("DELETE FROM cached_reserves WHERE isGuest = 0")
     suspend fun clearNonGuestReserves()
 
+    @Query("DELETE FROM cached_reserves WHERE isGuest = 1 AND date < :cutoffDate")
+    suspend fun deleteExpiredGuestReserves(cutoffDate: String)
+
     @Query("SELECT * FROM cached_meal_types ORDER BY disPriority ASC")
     fun getAllMealTypes(): Flow<List<CachedMealTypeEntity>>
 

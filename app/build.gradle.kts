@@ -16,10 +16,11 @@ android {
     applicationId = "com.aistudio.samadfoodqr.vfcklz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 5
-    versionName = "1.4.1"
+    versionCode = 6
+    versionName = "1.5.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    buildConfigField("String", "ALLOWED_UPDATE_REPO", "\"SamadFoodQR/app\"")
   }
 
   splits {
@@ -49,8 +50,9 @@ android {
 
   buildTypes {
     release {
-      isCrunchPngs = false
-      isMinifyEnabled = false
+      isCrunchPngs = true
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
@@ -123,6 +125,7 @@ dependencies {
   // implementation(libs.firebase.appcheck.debug)
   implementation(libs.zxing.core)
   implementation(libs.androidx.security.crypto)
+  implementation(libs.androidx.biometric)
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)

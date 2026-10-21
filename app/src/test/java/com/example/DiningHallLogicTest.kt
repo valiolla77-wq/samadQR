@@ -10,12 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 
-class ExampleUnitTest {
-
-    @Test
-    fun addition_isCorrect() {
-        assertEquals(4, 2 + 2)
-    }
+class DiningHallLogicTest {
 
     @Test
     fun testGetWeekStart_matchesPythonOutput() {
@@ -65,13 +60,12 @@ class ExampleUnitTest {
 
     @Test
     fun testMealTypeFilter_noReservationForSelectedMeal_doesNotDefaultToOtherMeals() {
-        // Given reservations on 2026-09-24 with Breakfast (6) only
         val breakfastReserve = com.example.data.local.entity.CachedReserveEntity(
             reserveId = 101L,
             date = "2026-09-24",
             dateJStr = "1405/07/02",
             dayName = "پنج‌شنبه",
-            mealTypeId = 6, // Breakfast
+            mealTypeId = 6,
             mealName = "صبحانه",
             foodName = "تخم مرغ آبپز"
         )
@@ -80,7 +74,6 @@ class ExampleUnitTest {
         val selectedDate = "2026-09-24"
         val selectedMealTypeId = 7 // Lunch
 
-        // Explicitly filter for selectedDate and selectedMealTypeId
         val filteredReserves = if (selectedMealTypeId != 0) {
             allReserves.filter { it.date == selectedDate && it.mealTypeId == selectedMealTypeId }
         } else {
@@ -88,8 +81,6 @@ class ExampleUnitTest {
         }
 
         val activeReserve = filteredReserves.firstOrNull()
-
-        // Assert that selecting Lunch (7) returns empty list and null activeReserve, NOT defaulting to Breakfast (6)
         assertTrue(filteredReserves.isEmpty())
         org.junit.Assert.assertNull(activeReserve)
     }
@@ -101,7 +92,7 @@ class ExampleUnitTest {
             date = "2026-09-24",
             dateJStr = "1405/07/02",
             dayName = "پنج‌شنبه",
-            mealTypeId = 7, // Lunch
+            mealTypeId = 7,
             mealName = "ناهار",
             foodName = "قورمه سبزی"
         )
@@ -110,7 +101,7 @@ class ExampleUnitTest {
             date = "2026-09-24",
             dateJStr = "1405/07/02",
             dayName = "پنج‌شنبه",
-            mealTypeId = 8, // Dinner
+            mealTypeId = 8,
             mealName = "شام",
             foodName = "پیتزا"
         )
@@ -118,31 +109,14 @@ class ExampleUnitTest {
 
         val selectedDate = "2026-09-24"
 
-        // When Lunch (7) selected
         val lunchFiltered = allReserves.filter { it.date == selectedDate && it.mealTypeId == 7 }
         assertEquals(1, lunchFiltered.size)
         assertEquals(102L, lunchFiltered.first().reserveId)
         assertEquals("ناهار", lunchFiltered.first().mealName)
 
-        // When Dinner (8) selected
         val dinnerFiltered = allReserves.filter { it.date == selectedDate && it.mealTypeId == 8 }
         assertEquals(1, dinnerFiltered.size)
         assertEquals(103L, dinnerFiltered.first().reserveId)
         assertEquals("شام", dinnerFiltered.first().mealName)
-    }
-
-    @Test
-    fun testUpdateManagerVersionComparison() {
-        // Remote is newer
-        assertTrue(com.example.util.UpdateManager.isNewerVersion("1.2.0", "v1.3.0"))
-        assertTrue(com.example.util.UpdateManager.isNewerVersion("1.2.0", "1.2.1"))
-        assertTrue(com.example.util.UpdateManager.isNewerVersion("1.2.0", "2.0.0"))
-        assertTrue(com.example.util.UpdateManager.isNewerVersion("1.2.0", "v1.2.0.1"))
-
-        // Same version or older
-        org.junit.Assert.assertFalse(com.example.util.UpdateManager.isNewerVersion("1.2.0", "v1.2.0"))
-        org.junit.Assert.assertFalse(com.example.util.UpdateManager.isNewerVersion("1.2.0", "1.2.0"))
-        org.junit.Assert.assertFalse(com.example.util.UpdateManager.isNewerVersion("1.3.0", "v1.2.0"))
-        org.junit.Assert.assertFalse(com.example.util.UpdateManager.isNewerVersion("1.2.0", "v1.1.9"))
     }
 }

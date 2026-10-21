@@ -339,11 +339,14 @@ class SamadRepository(
                 dao.clearNonGuestReserves()
                 prefs.lastSyncTimestamp = System.currentTimeMillis()
                 SamadFoodWidgetProvider.updateAllWidgets(context)
+                cleanupSensitiveOldData()
                 SyncResult.NoReservesFound(checkedWeeks = 4)
             }
 
         } catch (e: Exception) {
-            Log.e("SamadRepository", "Fetch reserves failed", e)
+            if (com.example.BuildConfig.DEBUG) {
+                Log.e("SamadRepository", "Fetch reserves failed: ${e.message}")
+            }
             SyncResult.Error(
                 message = e.localizedMessage ?: "اتصال به سامانه برقرار نشد"
             )
@@ -386,12 +389,16 @@ class SamadRepository(
             }
         } catch (e: retrofit2.HttpException) {
             val errBody = e.response()?.errorBody()?.string()
-            Log.w("SamadRepository", "HTTP error ${e.code()}: $errBody")
+            if (com.example.BuildConfig.DEBUG) {
+                Log.w("SamadRepository", "HTTP error ${e.code()}")
+            }
             val extracted = ForgotCodeExtractor.extract(errBody)
             val msg = if (!extracted.message.isNullOrBlank()) extracted.message else "خطای سامانه (${e.code()})"
             ExtractedForgotCode(null, message = msg)
         } catch (e: Exception) {
-            Log.e("SamadRepository", "getForgotCardCode failed for reserve $reserveId", e)
+            if (com.example.BuildConfig.DEBUG) {
+                Log.e("SamadRepository", "getForgotCardCode failed for reserve $reserveId")
+            }
             ExtractedForgotCode(null, message = e.localizedMessage ?: "خطا در دریافت کد")
         }
     }
@@ -554,9 +561,20 @@ class SamadRepository(
 
             Result.success(entity)
         } catch (e: Exception) {
-            Log.e("SamadRepository", "fetchFriendReserveForDate failed", e)
+            if (com.example.BuildConfig.DEBUG) {
+                Log.e("SamadRepository", "fetchFriendReserveForDate failed")
+            }
             Result.failure(e)
         }
+    }
+
+    suspend fun cleanupSensitiveOldData() = withContext(Dispatchers.IO) {
+        try {
+            val twoDaysAgo = java.time.LocalDate.now().minusDays(2).toString()
+            val twoDaysAgoMillis = System.currentTimeMillis() - (2L * 24 * 60 * 60 * 1000)
+            dao.deleteExpiredGuestReserves(twoDaysAgo)
+            db.chatDao().deleteOldOrClaimedMessages(twoDaysAgoMillis)
+        } catch (_: Exception) {}
     }
 
     private fun scheduleReminders(reserves: List<CachedReserveEntity>) {

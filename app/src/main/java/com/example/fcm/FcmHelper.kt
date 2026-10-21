@@ -46,7 +46,9 @@ object FcmHelper {
                     .addOnCompleteListener { task ->
                         if (task.isSuccessful) {
                             val token = task.result
-                            Log.i(TAG, "FCM Registration Token: $token")
+                            if (com.example.BuildConfig.DEBUG) {
+                                Log.d(TAG, "FCM Registration Token retrieved successfully")
+                            }
                             prefs.fcmToken = token
                             syncTopicSubscriptions(context, prefs)
                             onTokenRetrieved(token)

@@ -1,4 +1,4 @@
-name: Build & Publish Release APK
+name: Android CI & Release
 
 on:
   push:
@@ -7,10 +7,14 @@ on:
       - master
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag Name (e.g. v1.3.0)'
+        description: 'Release Tag Name (e.g. v1.4.2)'
         required: false
         default: ''
       release_name:
@@ -18,85 +22,122 @@ on:
         required: false
         default: ''
 
-permissions:
-  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build & Release Signed APK
+  # Build-only validation job for all pushes and PRs (does not publish anything)
+  build-and-test:
+    name: Build & Test Validation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@94b5068f573176e2d21147066639751986637e5b # v4
 
       - name: Make Gradle executable
-        run: |
-          chmod +x ./gradlew
+        run: chmod +x ./gradlew
 
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Assemble Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+  # Release job: ONLY triggers on git tags matching v* or manual workflow_dispatch
+  publish-release:
+    name: Build & Publish Release APK
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@94b5068f573176e2d21147066639751986637e5b # v4
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      # Fails if release signing secrets are missing; no insecure fallback
       - name: Prepare Signing Keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "Using KEYSTORE_BASE64 secret..."
-            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/release.keystore" >> $GITHUB_ENV
-            echo "STORE_PASSWORD=${{ secrets.STORE_PASSWORD || 'android' }}" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD || 'android' }}" >> $GITHUB_ENV
-          elif [ -f "$GITHUB_WORKSPACE/my-upload-key.jks" ]; then
-            echo "Using existing repository keystore (my-upload-key.jks)..."
-            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> $GITHUB_ENV
-            echo "STORE_PASSWORD=${{ secrets.STORE_PASSWORD || 'android' }}" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD || 'android' }}" >> $GITHUB_ENV
-          else
-            echo "Generating new keystore (my-upload-key.jks)..."
-            keytool -genkeypair -v -keystore my-upload-key.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=SamadFoodQR, OU=Mobile, O=Samad, L=Tehran, ST=Tehran, C=IR"
-            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> $GITHUB_ENV
-            echo "STORE_PASSWORD=android" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Missing required secret KEYSTORE_BASE64. Release build aborted."
+            exit 1
+          fi
+          if [ -z "$STORE_PASSWORD" ]; then
+            echo "::error::Missing required secret STORE_PASSWORD. Release build aborted."
+            exit 1
+          fi
+          if [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Missing required secret KEY_PASSWORD. Release build aborted."
+            exit 1
           fi
 
-      - name: Build Android APK
-        run: |
-          ./gradlew assembleRelease --no-daemon -Dkotlin.compiler.execution.strategy=daemon || ./gradlew assembleDebug --no-daemon
+          echo "$KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/release.keystore"
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/release.keystore" >> "$GITHUB_ENV"
+          echo "STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: Locate and Prepare Release APKs
-        id: apk_locator
+      - name: Build Android Release APKs
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Collect APKs and Generate SHA-256 Checksums
+        id: prepare_assets
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
         run: |
-          # 1. Determine Version from input, git tag, or app/build.gradle.kts
           GRADLE_VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
           if [ -z "$GRADLE_VERSION" ]; then
             GRADLE_VERSION="1.4.1"
           fi
 
-          TAG="${{ github.event.inputs.tag_name }}"
+          TAG="$INPUT_TAG"
           if [ -z "$TAG" ]; then
-            if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-              TAG="${{ github.ref_name }}"
+            if [[ "$REF" == refs/tags/* ]]; then
+              TAG="$REF_NAME"
             else
               TAG="v${GRADLE_VERSION}"
             fi
           fi
 
-          # Ensure tag starts with 'v'
           if [[ ! "$TAG" =~ ^v ]]; then
             TAG="v${TAG}"
           fi
 
-          mkdir -p release_apks
+          mkdir -p release_assets
           APK_COUNT=0
 
-          for apk in $(find app/build/outputs/apk -name "*.apk"); do
+          for apk in $(find app/build/outputs/apk -name "*.apk" | grep -i "release"); do
             apk_filename=$(basename "$apk")
             if [[ "$apk_filename" == *"arm64-v8a"* ]]; then
               dest_name="SamadFoodQR-${TAG}-arm64-v8a.apk"
@@ -107,39 +148,50 @@ jobs:
             else
               dest_name="SamadFoodQR-${TAG}-${apk_filename}"
             fi
-            cp "$apk" "release_apks/$dest_name"
-            echo "Prepared: $apk -> release_apks/$dest_name"
+            cp "$apk" "release_assets/$dest_name"
             APK_COUNT=$((APK_COUNT + 1))
           done
 
           if [ "$APK_COUNT" -eq 0 ]; then
-            echo "Error: No APK files found!"
+            echo "::error::No release APK files generated!"
             exit 1
           fi
 
-          echo "tag_name=$TAG" >> $GITHUB_OUTPUT
-          echo "gradle_version=$GRADLE_VERSION" >> $GITHUB_OUTPUT
-          echo "Successfully prepared $APK_COUNT APK(s) in release_apks folder for tag $TAG"
+          cd release_assets
+          sha256sum *.apk > SHA256SUMS.txt
+          CHECKSUM_CONTENT=$(cat SHA256SUMS.txt)
+          cd ..
 
-      - name: Create GitHub Release & Upload APKs
-        uses: softprops/action-gh-release@v2
+          echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
+          echo "checksums<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHECKSUM_CONTENT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release & Upload Assets
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
+        env:
+          INPUT_TITLE: ${{ github.event.inputs.release_name }}
+          TAG_NAME: ${{ steps.prepare_assets.outputs.tag_name }}
+          CHECKSUMS: ${{ steps.prepare_assets.outputs.checksums }}
         with:
-          tag_name: ${{ steps.apk_locator.outputs.tag_name }}
-          name: ${{ github.event.inputs.release_name || format('انتشار نسخه جدید سامانه سماد ({0})', steps.apk_locator.outputs.tag_name) }}
+          tag_name: ${{ steps.prepare_assets.outputs.tag_name }}
+          name: ${{ env.INPUT_TITLE != '' && env.INPUT_TITLE || format('انتشار نسخه جدید سامانه سماد ({0})', steps.prepare_assets.outputs.tag_name) }}
           body: |
-            ## 📱 انتشار نسخه جدید سامانه سماد (${{ steps.apk_locator.outputs.tag_name }})
-            
-            ### ✨ تغییرات این نسخه:
-            - ⚡ **تولید دقیق کیوآر کد منطبق بر استاندارد سلف سماد:** حالت بایت (Byte Mode)، سطح تصحیح خطای بالا (ECC H)، نسخه ۲ و پس‌زمینه سفید خالص جهت اسکن فوق‌سریع در گیت.
-            - 🔍 **بزرگ‌نمایی تمام‌صفحه بارکد و QR:** امکان باز کردن کارت بارکد در سایز بزرگ با روشنایی متمرکز برای سلف دانشگاه.
-            - 📐 **بهینه‌سازی ابعاد کارت‌ها:** سایزبندی ارگونومیک و فشرده متناسب با انواع صفحه‌نمایش‌های گوشی بدون اسکرول مزاحم.
-            - 🔙 **اصلاح کامل ناوبری پیام‌رسان:** دکمه بازگشت مستقیم به میزکار و پشتیبانی از دکمه فیزیکی گوشی (`BackHandler`).
-            - ⚙️ **خروجی چندمعماری (Multi-Architecture):** نسخه‌های مجزا و سبک برای پردازنده‌های `arm64-v8a` (گوشی‌های جدید)، `armeabi-v7a` (گوشی‌های قدیمی) و نسخه یکپارچه یونیورسال.
-            
-            ### 📥 راهنمای دانلود و نصب:
-            - **`arm64-v8a`:** مناسب برای ۹۵٪ گوشی‌های هوشمند جدید (نسخه سبک و بهینه).
-            - **`armeabi-v7a`:** مناسب برای گوشی‌های قدیمی‌تر ۳۲ بیتی.
-            - **`universal`:** نسخه جامع سازگار با تمامی مدل‌ها.
-          files: release_apks/*.apk
+            ## 📱 انتشار نسخه جدید سامانه سماد (${{ env.TAG_NAME }})
+
+            ### 🔒 اعتبارسنجی فایل‌ها و هش SHA-256:
+            جهت اطمینان از سلامت و عدم تغییر فایل‌های نصبی، می‌توانید هش SHA-256 فایل دانلود شده را با مقادیر زیر بررسی نمایید:
+
+            ```
+            ${{ env.CHECKSUMS }}
+            ```
+
+            ### 📥 راهنمای فایل‌های نصبی:
+            - **`arm64-v8a`:** مناسب برای اکثر گوشی‌های هوشمند جدید (نسخه سبک و سریع).
+            - **`armeabi-v7a`:** مناسب برای دستگاه‌های قدیمی‌تر ۳۲ بیتی.
+            - **`universal`:** نسخه کامل و سازگار با تمام دستگاه‌ها.
+          files: |
+            release_assets/*.apk
+            release_assets/SHA256SUMS.txt
           draft: false
           prerelease: false

@@ -76,15 +76,8 @@ data class MainUiState(
     val notifyDifferentSelf: Boolean = true,
     val knownSelfNames: Set<String> = emptySet(),
     val differentSelfWarning: String? = null,
-    // Messenger state
-    val messengerMessages: List<com.example.data.local.entity.ChatMessageEntity> = emptyList(),
-    val messengerUnreadCount: Int = 0,
-    val messengerUserId: String = "",
-    val messengerDisplayName: String = "",
-    val messengerCustomUsername: String = "",
-    val messengerRelayServer: String = "cloudflare",
-    val isSendingMessage: Boolean = false,
-    val isSyncingMessenger: Boolean = false
+    val biometricGateEnabled: Boolean = false,
+    val friendReserveFeatureEnabled: Boolean = false
 ) {
     val hasReservationForSelectedMeal: Boolean
         get() = dayReservesForMeal.isNotEmpty()
@@ -123,40 +116,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             knownSelfNames = prefs.knownSelfNames,
             selectedDate = LocalDate.now().toString(),
             selectedMealTypeId = MealTimeHelper.getActiveMealCategory(prefs).defaultMealTypeId,
-            messengerUserId = prefs.messengerUserId,
-            messengerDisplayName = prefs.messengerDisplayName,
-            messengerCustomUsername = prefs.messengerCustomUsername,
-            messengerRelayServer = prefs.messengerRelayServer
+            biometricGateEnabled = prefs.biometricGateEnabled,
+            friendReserveFeatureEnabled = prefs.friendReserveFeatureEnabled
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    val messengerRepository = com.example.data.repository.MessengerRepository(
-        context = application,
-        prefs = prefs,
-        chatDao = com.example.data.local.AppDatabase.getInstance(application).chatDao(),
-        reserveDao = com.example.data.local.AppDatabase.getInstance(application).reserveDao()
-    )
-
     init {
-        // Observe messenger messages
-        viewModelScope.launch {
-            messengerRepository.allMessagesFlow.collect { messages ->
-                _uiState.update { it.copy(messengerMessages = messages) }
-            }
-        }
-
-        // Observe messenger unread count
-        viewModelScope.launch {
-            messengerRepository.unreadCountFlow.collect { count ->
-                _uiState.update { it.copy(messengerUnreadCount = count) }
-            }
-        }
-
-        // Background sync of incoming messages on launch
-        viewModelScope.launch {
-            messengerRepository.syncIncomingMessages()
-        }
 
         // Initialize FCM & retrieve device registration token
         FcmHelper.initAndFetchToken(application) { token ->
@@ -468,6 +434,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(isDarkMode = enabled) }
     }
 
+    fun setBiometricGateEnabled(enabled: Boolean) {
+        prefs.biometricGateEnabled = enabled
+        _uiState.update { it.copy(biometricGateEnabled = enabled) }
+    }
+
+    fun setFriendReserveFeatureEnabled(enabled: Boolean) {
+        prefs.friendReserveFeatureEnabled = enabled
+        _uiState.update { it.copy(friendReserveFeatureEnabled = enabled) }
+    }
+
     fun setCafeteriaMealEnabled(mealType: String, enabled: Boolean) {
         when (mealType) {
             "breakfast" -> {
@@ -561,6 +537,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         targetMealTypeId: Int? = null,
         onSuccess: (String) -> Unit = {}
     ) {
+        if (!prefs.friendReserveFeatureEnabled) {
+            _uiState.update { it.copy(errorMessage = "قابلیت استعلام از حساب دوستان در تنظیمات امنیتی غیرفعال است") }
+            return
+        }
+
         if (friendUsername.isBlank() || friendPassword.isBlank()) {
             _uiState.update { it.copy(errorMessage = "شماره دانشجویی و رمز عبور الزامی است") }
             return
@@ -835,213 +816,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             else -> "${diffSec / 86400} روز پیش"
         }
     }
-
-    // --- Messenger Actions ---
-
-    fun updateMessengerProfile(displayName: String, customUsername: String) {
-        prefs.messengerDisplayName = displayName
-        prefs.messengerCustomUsername = customUsername
-        _uiState.update {
-            it.copy(
-                messengerDisplayName = prefs.messengerDisplayName,
-                messengerCustomUsername = prefs.messengerCustomUsername
-            )
-        }
-    }
-
-    fun syncMessenger() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSyncingMessenger = true) }
-            val result = messengerRepository.syncIncomingMessages()
-            _uiState.update {
-                it.copy(
-                    isSyncingMessenger = false,
-                    messengerRelayServer = prefs.messengerRelayServer,
-                    infoMessage = if (result.isSuccess && (result.getOrNull() ?: 0) > 0)
-                        "${result.getOrNull()} پیام جدید دریافت شد"
-                    else null
-                )
-            }
-        }
-    }
-
-    fun sendMessengerText(recipientId: String, text: String) {
-        if (text.isBlank() || recipientId.isBlank()) return
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSendingMessage = true) }
-            val res = messengerRepository.sendMessage(recipientId, text, null)
-            _uiState.update {
-                it.copy(
-                    isSendingMessage = false,
-                    messengerRelayServer = prefs.messengerRelayServer,
-                    infoMessage = if (res.isSuccess) "پیام با موفقیت ارسال شد" else "خطا در ارسال پیام: ${res.exceptionOrNull()?.message}"
-                )
-            }
-        }
-    }
-
-    fun sendSingleReserveViaMessenger(
-        recipientId: String,
-        reserve: CachedReserveEntity,
-        note: String = ""
-    ) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSendingMessage = true) }
-            val packet = com.example.data.model.TokenPacket.fromReserve(
-                reserve = reserve,
-                senderId = prefs.getEffectiveMessengerHandle(),
-                senderName = prefs.messengerDisplayName,
-                receiverId = recipientId,
-                messageText = note
-            )
-            val res = messengerRepository.sendMessage(recipientId, note, packet)
-            _uiState.update {
-                it.copy(
-                    isSendingMessage = false,
-                    messengerRelayServer = prefs.messengerRelayServer,
-                    infoMessage = if (res.isSuccess) "ژتون ${reserve.foodName} به $recipientId ارسال شد" else "خطا: ${res.exceptionOrNull()?.message}"
-                )
-            }
-        }
-    }
-
-    fun sendDayReservesViaMessenger(
-        recipientId: String,
-        date: String,
-        note: String = ""
-    ) {
-        viewModelScope.launch {
-            val dayReserves = _uiState.value.allReserves.filter { it.date == date }
-            if (dayReserves.isEmpty()) {
-                _uiState.update { it.copy(errorMessage = "هیچ ژتونی برای تاریخ انتخابی موجود نیست") }
-                return@launch
-            }
-            val title = "ژتون‌های روز ${dayReserves.firstOrNull()?.dayName ?: ""} ($date)"
-            val packet = com.example.data.model.TokenPacket.fromGroup(
-                reserves = dayReserves,
-                type = "DAY",
-                title = title,
-                senderId = prefs.getEffectiveMessengerHandle(),
-                senderName = prefs.messengerDisplayName,
-                receiverId = recipientId,
-                messageText = note
-            )
-            _uiState.update { it.copy(isSendingMessage = true) }
-            val res = messengerRepository.sendMessage(recipientId, note, packet)
-            _uiState.update {
-                it.copy(
-                    isSendingMessage = false,
-                    messengerRelayServer = prefs.messengerRelayServer,
-                    infoMessage = if (res.isSuccess) "$title ارسال شد" else "خطا: ${res.exceptionOrNull()?.message}"
-                )
-            }
-        }
-    }
-
-    fun sendWeekReservesViaMessenger(
-        recipientId: String,
-        reserves: List<CachedReserveEntity>,
-        weekTitle: String,
-        note: String = ""
-    ) {
-        viewModelScope.launch {
-            if (reserves.isEmpty()) {
-                _uiState.update { it.copy(errorMessage = "هیچ ژتونی برای این هفته انتخاب نشده است") }
-                return@launch
-            }
-            val packet = com.example.data.model.TokenPacket.fromGroup(
-                reserves = reserves,
-                type = "WEEK",
-                title = weekTitle,
-                senderId = prefs.getEffectiveMessengerHandle(),
-                senderName = prefs.messengerDisplayName,
-                receiverId = recipientId,
-                messageText = note
-            )
-            _uiState.update { it.copy(isSendingMessage = true) }
-            val res = messengerRepository.sendMessage(recipientId, note, packet)
-            _uiState.update {
-                it.copy(
-                    isSendingMessage = false,
-                    messengerRelayServer = prefs.messengerRelayServer,
-                    infoMessage = if (res.isSuccess) "رزروهای هفته ارسال شد" else "خطا: ${res.exceptionOrNull()?.message}"
-                )
-            }
-        }
-    }
-
-    fun sendAllReservesViaMessenger(
-        recipientId: String,
-        note: String = ""
-    ) {
-        viewModelScope.launch {
-            val allActive = _uiState.value.allReserves.filter { !it.consumed }
-            if (allActive.isEmpty()) {
-                _uiState.update { it.copy(errorMessage = "هیچ رزرو فعالی برای ارسال وجود ندارد") }
-                return@launch
-            }
-            val packet = com.example.data.model.TokenPacket.fromGroup(
-                reserves = allActive,
-                type = "ALL",
-                title = "تمام رزروهای من (${allActive.size} وعده)",
-                senderId = prefs.getEffectiveMessengerHandle(),
-                senderName = prefs.messengerDisplayName,
-                receiverId = recipientId,
-                messageText = note
-            )
-            _uiState.update { it.copy(isSendingMessage = true) }
-            val res = messengerRepository.sendMessage(recipientId, note, packet)
-            _uiState.update {
-                it.copy(
-                    isSendingMessage = false,
-                    messengerRelayServer = prefs.messengerRelayServer,
-                    infoMessage = if (res.isSuccess) "تمام رزروها (${allActive.size} وعده) ارسال شد" else "خطا: ${res.exceptionOrNull()?.message}"
-                )
-            }
-        }
-    }
-
-    fun claimMessengerToken(messageId: String, item: com.example.data.model.SharedTokenItem, senderName: String) {
-        viewModelScope.launch {
-            val res = messengerRepository.claimTokenToReserves(messageId, item, senderName)
-            if (res.isSuccess) {
-                _uiState.update {
-                    it.copy(infoMessage = "ژتون ${item.foodName} به لیست رزروهای اصلی شما اضافه شد")
-                }
-            } else {
-                _uiState.update {
-                    it.copy(errorMessage = "خطا در افزودن ژتون: ${res.exceptionOrNull()?.message}")
-                }
-            }
-        }
-    }
-
-    fun importFromMessengerText(rawText: String) {
-        viewModelScope.launch {
-            val res = messengerRepository.importFromShareableText(rawText)
-            if (res.isSuccess) {
-                _uiState.update {
-                    it.copy(infoMessage = "بسته ژتون با موفقیت دریافت و بازگشایی شد")
-                }
-            } else {
-                _uiState.update {
-                    it.copy(errorMessage = "کد بسته ژتون نامعتبر است یا به درستی کپی نشده است")
-                }
-            }
-        }
-    }
-
-    fun deleteChatMessage(id: String) {
-        viewModelScope.launch {
-            messengerRepository.deleteMessage(id)
-            _uiState.update { it.copy(infoMessage = "پیام حذف شد") }
-        }
-    }
-
-    fun clearAllChatMessages() {
-        viewModelScope.launch {
-            messengerRepository.clearAll()
-            _uiState.update { it.copy(infoMessage = "تمامی پیام‌ها پاکسازی شدند") }
-        }
-    }
 }
+

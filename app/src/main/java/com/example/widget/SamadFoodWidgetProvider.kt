@@ -38,7 +38,6 @@ class SamadFoodWidgetProvider : AppWidgetProvider() {
                     .apply()
                 updateAllWidgets(context)
             }
-            Intent.ACTION_TIME_TICK,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
             Intent.ACTION_DATE_CHANGED -> {
@@ -215,11 +214,8 @@ class SamadFoodWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC, nextMillis, pendingIntent)
-                } else {
-                    alarmManager.set(AlarmManager.RTC, nextMillis, pendingIntent)
-                }
+                // Use standard RTC alarm so Android batches alarms efficiently without waking from deep sleep aggressively
+                alarmManager.set(AlarmManager.RTC, nextMillis, pendingIntent)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to schedule widget transition alarm: ${e.message}")
             }

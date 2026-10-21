@@ -23,16 +23,17 @@ object WorkScheduler {
         try {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiresBatteryNotLow(true)
                 .build()
 
-            // Periodic sync every 6 hours
+            // Periodic sync every 6 hours (deferred if battery is low)
             val periodicRequest = PeriodicWorkRequestBuilder<SyncReservesWorker>(6, TimeUnit.HOURS)
                 .setConstraints(constraints)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 PERIODIC_SYNC_WORK_NAME,
-                ExistingPeriodicWorkPolicy.UPDATE,
+                ExistingPeriodicWorkPolicy.KEEP,
                 periodicRequest
             )
         } catch (e: Exception) {

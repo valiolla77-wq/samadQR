@@ -10,7 +10,9 @@ class SamadFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        Log.i(TAG, "New FCM Token received: $token")
+        if (com.example.BuildConfig.DEBUG) {
+            Log.d(TAG, "New FCM Token received successfully")
+        }
         val prefs = SecurePrefs(applicationContext)
         prefs.fcmToken = token
         FcmHelper.syncTopicSubscriptions(applicationContext, prefs)
@@ -18,7 +20,9 @@ class SamadFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
-        Log.d(TAG, "FCM Message received from: ${remoteMessage.from}")
+        if (com.example.BuildConfig.DEBUG) {
+            Log.d(TAG, "FCM Message received")
+        }
 
         val prefs = SecurePrefs(applicationContext)
         if (!prefs.mealReminderNotificationEnabled || !prefs.fcmEnabled) {

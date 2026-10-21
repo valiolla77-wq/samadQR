@@ -58,9 +58,13 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.fragment.app.FragmentActivity
+import com.example.util.BiometricHelper
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -97,8 +101,29 @@ fun LoginScreen(
     var rememberPassword by remember { mutableStateOf(viewModel.prefs.rememberPassword) }
     var passwordVisible by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val handleLoginAction: () -> Unit = {
+        focusManager.clearFocus()
+        val isStoredPassword = viewModel.prefs.rememberPassword &&
+                !viewModel.prefs.password.isNullOrBlank() &&
+                password == viewModel.prefs.password
+
+        if (uiState.biometricGateEnabled && isStoredPassword && context is FragmentActivity) {
+            BiometricHelper.showBiometricPrompt(
+                activity = context,
+                title = "تأیید هویت بیومتریک",
+                subtitle = "جهت ورود به حساب با رمز ذخیره شده، اثر انگشت خود را تأیید کنید",
+                onSuccess = {
+                    viewModel.login(username, password, rememberPassword)
+                }
+            )
+        } else {
+            viewModel.login(username, password, rememberPassword)
+        }
+    }
 
     LaunchedEffect(uiState.isLoggedIn) {
         if (uiState.isLoggedIn) {
@@ -304,10 +329,7 @@ fun LoginScreen(
                                         imeAction = ImeAction.Done
                                     ),
                                     keyboardActions = KeyboardActions(
-                                        onDone = {
-                                            focusManager.clearFocus()
-                                            viewModel.login(username, password, rememberPassword)
-                                        }
+                                        onDone = { handleLoginAction() }
                                     ),
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedBorderColor = SamadPrimary,
@@ -321,54 +343,51 @@ fun LoginScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .testTag("password_input")
-                                )
+                                 )
 
-                                Spacer(modifier = Modifier.height(10.dp))
+                                 Spacer(modifier = Modifier.height(10.dp))
 
-                                // Remember Password Checkbox
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { rememberPassword = !rememberPassword }
-                                        .padding(vertical = 4.dp)
-                                ) {
-                                    Checkbox(
-                                        checked = rememberPassword,
-                                        onCheckedChange = { rememberPassword = it },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = SamadPrimary,
-                                            uncheckedColor = SamadOutline
-                                        ),
-                                        modifier = Modifier.testTag("remember_password_checkbox")
-                                    )
-                                    Text(
-                                        text = "ذخیره مشخصات برای ورودهای بعدی",
-                                        fontSize = 12.sp,
-                                        color = SamadOnSurfaceVariant,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
+                                 // Remember Password Checkbox
+                                 Row(
+                                     verticalAlignment = Alignment.CenterVertically,
+                                     modifier = Modifier
+                                         .fillMaxWidth()
+                                         .clickable { rememberPassword = !rememberPassword }
+                                         .padding(vertical = 4.dp)
+                                 ) {
+                                     Checkbox(
+                                         checked = rememberPassword,
+                                         onCheckedChange = { rememberPassword = it },
+                                         colors = CheckboxDefaults.colors(
+                                             checkedColor = SamadPrimary,
+                                             uncheckedColor = SamadOutline
+                                         ),
+                                         modifier = Modifier.testTag("remember_password_checkbox")
+                                     )
+                                     Text(
+                                         text = "ذخیره مشخصات برای ورودهای بعدی",
+                                         fontSize = 12.sp,
+                                         color = SamadOnSurfaceVariant,
+                                         fontWeight = FontWeight.Medium
+                                     )
+                                 }
 
-                                Spacer(modifier = Modifier.height(18.dp))
+                                 Spacer(modifier = Modifier.height(18.dp))
 
-                                // Login Button
-                                Button(
-                                    onClick = {
-                                        focusManager.clearFocus()
-                                        viewModel.login(username, password, rememberPassword)
-                                    },
-                                    enabled = !uiState.isLoading,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = SamadPrimary,
-                                        contentColor = Color.White
-                                    ),
-                                    shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(52.dp)
-                                        .testTag("login_button")
-                                ) {
+                                 // Login Button
+                                 Button(
+                                     onClick = { handleLoginAction() },
+                                     enabled = !uiState.isLoading,
+                                     colors = ButtonDefaults.buttonColors(
+                                         containerColor = SamadPrimary,
+                                         contentColor = Color.White
+                                     ),
+                                     shape = RoundedCornerShape(16.dp),
+                                     modifier = Modifier
+                                         .fillMaxWidth()
+                                         .height(52.dp)
+                                         .testTag("login_button")
+                                 ) {
                                     if (uiState.isLoading) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(24.dp),
@@ -387,6 +406,36 @@ fun LoginScreen(
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 15.sp
                                         )
+                                    }
+                                }
+
+                                if (uiState.biometricGateEnabled && viewModel.prefs.rememberPassword && !viewModel.prefs.password.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    androidx.compose.material3.OutlinedButton(
+                                        onClick = {
+                                            if (context is FragmentActivity) {
+                                                BiometricHelper.showBiometricPrompt(
+                                                    activity = context,
+                                                    title = "ورود با اثر انگشت",
+                                                    subtitle = "تأیید هویت جهت ورود با اطلاعات ذخیره شده",
+                                                    onSuccess = {
+                                                        viewModel.login(
+                                                            viewModel.prefs.username ?: username,
+                                                            viewModel.prefs.password ?: password,
+                                                            true
+                                                        )
+                                                    }
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp),
+                                        shape = RoundedCornerShape(16.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Fingerprint, contentDescription = null, tint = SamadPrimary)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("ورود سریع با اثر انگشت", color = SamadPrimary, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }

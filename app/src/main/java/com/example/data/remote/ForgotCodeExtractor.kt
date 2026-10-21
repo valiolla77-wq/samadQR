@@ -19,7 +19,6 @@ object ForgotCodeExtractor {
         }
 
         val trimmed = raw.trim()
-        Log.d(TAG, "Raw forgot code response: $trimmed")
 
         var foundCode: String? = null
         var isValid = true
@@ -112,7 +111,9 @@ object ForgotCodeExtractor {
             foundCode = trimmed
         }
 
-        Log.d(TAG, "Extracted code: $foundCode, valid: $isValid, msg: $message")
+        if (com.example.BuildConfig.DEBUG) {
+            Log.d(TAG, "Code extracted successfully: valid=$isValid, hasMsg=${!message.isNullOrBlank()}")
+        }
         return ExtractedForgotCode(code = foundCode, isValid = isValid, message = message)
     }
 }

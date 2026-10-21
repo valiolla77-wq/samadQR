@@ -8,21 +8,7 @@ import androidx.security.crypto.MasterKey
 
 class SecurePrefs(context: Context) {
 
-    private val prefs: SharedPreferences = try {
-        val masterKey = MasterKey.Builder(context.applicationContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context.applicationContext,
-            "secure_samad_prefs",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    } catch (e: Exception) {
-        Log.w("SecurePrefs", "EncryptedSharedPreferences failed, fallback to standard: ${e.message}")
-        context.applicationContext.getSharedPreferences("samad_prefs_fallback", Context.MODE_PRIVATE)
-    }
+    private val prefs: SharedPreferences = createEncryptedPrefs(context.applicationContext)
 
     var accessToken: String?
         get() = prefs.getString(KEY_ACCESS_TOKEN, null)
@@ -224,6 +210,22 @@ class SecurePrefs(context: Context) {
         return if (custom.isNotBlank()) "@$custom" else messengerUserId
     }
 
+    var biometricGateEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BIOMETRIC_GATE, false)
+        set(value) = prefs.edit().putBoolean(KEY_BIOMETRIC_GATE, value).apply()
+
+    var friendReserveFeatureEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FRIEND_RESERVE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_FRIEND_RESERVE_ENABLED, value).apply()
+
+    var deviceAuthSecret: String?
+        get() = prefs.getString(KEY_DEVICE_AUTH_SECRET, null)
+        set(value) = prefs.edit().putString(KEY_DEVICE_AUTH_SECRET, value).apply()
+
+    var deviceRegisteredId: String?
+        get() = prefs.getString(KEY_DEVICE_REGISTERED_ID, null)
+        set(value) = prefs.edit().putString(KEY_DEVICE_REGISTERED_ID, value).apply()
+
     fun isTokenValid(): Boolean {
         val token = accessToken
         if (token.isNullOrBlank()) return false
@@ -237,11 +239,14 @@ class SecurePrefs(context: Context) {
 
     companion object {
         const val DEFAULT_BASE_URL = "https://saba.tvu.ac.ir/"
+        private const val PREFS_FILE_NAME = "secure_samad_prefs"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_TOKEN_EXPIRY = "token_expiry"
         private const val KEY_USERNAME = "username"
         private const val KEY_PASSWORD = "password"
         private const val KEY_REMEMBER_PW = "remember_password"
+        private const val KEY_BIOMETRIC_GATE = "biometric_gate_enabled"
+        private const val KEY_FRIEND_RESERVE_ENABLED = "friend_reserve_feature_enabled"
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_LAST_SYNC = "last_sync"
         private const val KEY_STUDENT_NAME = "student_name"
@@ -253,5 +258,55 @@ class SecurePrefs(context: Context) {
         private const val KEY_MESSENGER_DISPLAY_NAME = "messenger_display_name"
         private const val KEY_MESSENGER_USERNAME = "messenger_username"
         private const val KEY_MESSENGER_RELAY_SERVER = "messenger_relay_server"
+        private const val KEY_DEVICE_AUTH_SECRET = "device_auth_secret"
+        private const val KEY_DEVICE_REGISTERED_ID = "device_registered_id"
+
+        private fun createEncryptedPrefs(appContext: Context): SharedPreferences {
+            // Delete old plaintext fallback prefs file if it existed
+            try {
+                val fallbackFile = java.io.File(appContext.filesDir.parentFile, "shared_prefs/samad_prefs_fallback.xml")
+                if (fallbackFile.exists()) {
+                    fallbackFile.delete()
+                }
+            } catch (_: Exception) {}
+
+            return try {
+                buildEncryptedSharedPreferences(appContext)
+            } catch (e: Exception) {
+                // Keyset or encrypted prefs file was corrupted. Purge corrupted files and recreate cleanly.
+                purgeCorruptedPrefsFiles(appContext)
+                try {
+                    buildEncryptedSharedPreferences(appContext)
+                } catch (e2: Exception) {
+                    throw SecurityException("Secure storage initialization failed; user re-login required", e2)
+                }
+            }
+        }
+
+        private fun buildEncryptedSharedPreferences(appContext: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                appContext,
+                PREFS_FILE_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+
+        private fun purgeCorruptedPrefsFiles(appContext: Context) {
+            try {
+                val sharedPrefsDir = java.io.File(appContext.filesDir.parentFile, "shared_prefs")
+                if (sharedPrefsDir.exists() && sharedPrefsDir.isDirectory) {
+                    sharedPrefsDir.listFiles()?.forEach { file ->
+                        if (file.name.contains(PREFS_FILE_NAME) || file.name.contains("keyset") || file.name.contains("samad_prefs")) {
+                            file.delete()
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 }

@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.example.BuildConfig
 import com.example.data.model.GitHubAsset
 import com.example.data.model.GitHubRelease
 import com.example.data.remote.GitHubApiService
@@ -16,6 +18,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 sealed class UpdateCheckResult {
@@ -50,22 +53,26 @@ object UpdateManager {
         .build()
 
     /**
-     * Checks if a new release exists on GitHub Releases for the given repo
+     * Checks if a new release exists on GitHub Releases.
+     * Enforces the hardcoded allowed repo from BuildConfig and ignores user-editable values.
      */
     suspend fun checkForUpdate(
-        repoFullName: String,
+        ignoredUserRepo: String? = null,
         currentVersionName: String
     ): UpdateCheckResult = withContext(Dispatchers.IO) {
+        val repoFullName = BuildConfig.ALLOWED_UPDATE_REPO
         val trimmed = repoFullName.trim().removePrefix("https://github.com/").removePrefix("github.com/").trim('/')
         val parts = trimmed.split("/")
         if (parts.size < 2) {
-            return@withContext UpdateCheckResult.Error("نام مخزن نامعتبر است (فرمت صحیح: owner/repo)")
+            return@withContext UpdateCheckResult.Error("نام مخزن مجاز نامعتبر است")
         }
         val owner = parts[0]
         val repo = parts[1]
 
         try {
-            Log.d(TAG, "Checking update for $owner/$repo against current version $currentVersionName")
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "Checking update for $owner/$repo against current version $currentVersionName")
+            }
             val release = apiService.getLatestRelease(owner, repo)
             val remoteTag = release.tagName.ifBlank { release.name ?: "" }
 
@@ -86,9 +93,11 @@ object UpdateManager {
                 )
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Update check failed: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                Log.w(TAG, "Update check failed: ${e.message}")
+            }
             val msg = when {
-                e.message?.contains("404") == true -> "هنوز هیچ انتشار رسمی (Release) در مخزن $owner/$repo ثبت نشده است"
+                e.message?.contains("404") == true -> "هنوز هیچ انتشار رسمی (Release) در مخزن ثبت نشده است"
                 e.message?.contains("403") == true -> "محدودیت نرخ دسترسی به گیت‌هاب؛ لطفاً کمی بعد تلاش کنید"
                 else -> e.localizedMessage ?: "خطا در اتصال به سرور گیت‌هاب"
             }
@@ -128,7 +137,76 @@ object UpdateManager {
     }
 
     /**
-     * Downloads APK with progress callback into app's files directory
+     * Validates download domain to only permit official GitHub release distribution hosts
+     */
+    fun isAllowedDownloadUrl(url: String): Boolean {
+        return try {
+            val parsed = Uri.parse(url)
+            val scheme = parsed.scheme?.lowercase()
+            val host = parsed.host?.lowercase()
+            scheme == "https" && (host == "github.com" || host == "objects.githubusercontent.com" || host?.endsWith(".githubusercontent.com") == true)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Calculates SHA-256 of downloaded file
+     */
+    fun calculateFileSha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            var bytesRead: Int
+            while (input.read(buffer).also { bytesRead = it } != -1) {
+                digest.update(buffer, 0, bytesRead)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Verifies that the APK SHA-256 matches the release checksums
+     */
+    suspend fun verifyApkSha256(apkFile: File, release: GitHubRelease): Result<Unit> = withContext(Dispatchers.IO) {
+        val calculated = calculateFileSha256(apkFile).lowercase()
+        val sumsAsset = release.assets.firstOrNull { it.name.equals("SHA256SUMS.txt", ignoreCase = true) }
+        var verified = false
+
+        if (sumsAsset != null && isAllowedDownloadUrl(sumsAsset.downloadUrl)) {
+            try {
+                val req = Request.Builder()
+                    .url(sumsAsset.downloadUrl)
+                    .header("User-Agent", "SamadFoodQR-Android")
+                    .build()
+                val resp = downloadClient.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    val text = resp.body?.string() ?: ""
+                    val hashes = Regex("""[a-fA-F0-9]{64}""").findAll(text).map { it.value.lowercase() }.toSet()
+                    if (hashes.contains(calculated)) {
+                        verified = true
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (!verified) {
+            val body = release.body ?: ""
+            val hashes = Regex("""[a-fA-F0-9]{64}""").findAll(body).map { it.value.lowercase() }.toSet()
+            if (hashes.contains(calculated)) {
+                verified = true
+            }
+        }
+
+        if (verified) {
+            Result.success(Unit)
+        } else {
+            Result.failure(SecurityException("خطای امنیتی: فایل دانلود شده فاقد هش SHA-256 معتبر است یا با مقدار منتشرشده مطابقت ندارد."))
+        }
+    }
+
+    /**
+     * Downloads APK with progress callback into app's updates directory
      */
     suspend fun downloadApk(
         context: Context,
@@ -136,6 +214,10 @@ object UpdateManager {
         fileName: String = "update.apk",
         onProgress: (Float) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
+        if (!isAllowedDownloadUrl(downloadUrl)) {
+            return@withContext Result.failure(SecurityException("دانلود فایل فقط از سرورهای رسمی GitHub مجاز است."))
+        }
+
         try {
             val updatesDir = File(context.filesDir, "updates")
             if (!updatesDir.exists()) {
@@ -185,18 +267,32 @@ object UpdateManager {
             }
             Result.success(destinationFile)
         } catch (e: Exception) {
-            Log.e(TAG, "APK download failed", e)
+            if (BuildConfig.DEBUG) {
+                Log.e(TAG, "APK download failed", e)
+            }
             Result.failure(e)
         }
     }
 
     /**
-     * Prompts Android package installer via FileProvider
+     * Prompts Android package installer via FileProvider.
+     * Handles missing REQUEST_INSTALL_PACKAGES permission by directing user to app install settings.
      */
     fun installApk(context: Context, apkFile: File): Result<Unit> {
         return try {
             if (!apkFile.exists() || apkFile.length() == 0L) {
                 return Result.failure(Exception("فایل نصبی یافت نشد"))
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(settingsIntent)
+                    return Result.failure(SecurityException("لطفاً در صفحه تنظیمات بازشده، اجازه نصب برنامه را فعال نمایید."))
+                }
             }
 
             val uri: Uri = FileProvider.getUriForFile(
@@ -212,7 +308,9 @@ object UpdateManager {
             context.startActivity(intent)
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Install launch failed", e)
+            if (BuildConfig.DEBUG) {
+                Log.e(TAG, "Install launch failed", e)
+            }
             Result.failure(e)
         }
     }
@@ -227,7 +325,9 @@ object UpdateManager {
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "Open browser failed", e)
+            if (BuildConfig.DEBUG) {
+                Log.e(TAG, "Open browser failed", e)
+            }
         }
     }
 

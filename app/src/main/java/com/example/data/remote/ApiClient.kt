@@ -13,8 +13,7 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
 
     private const val TAG = "SamadApiClient"
-    private const val USER_AGENT =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+    private val USER_AGENT = "SamadFoodQR/${com.example.BuildConfig.VERSION_NAME} (Android)"
 
     /**
      * Provider lambda to supply active bearer token dynamically
@@ -25,23 +24,33 @@ object ApiClient {
         .addLast(KotlinJsonAdapterFactory())
         .build()
 
-    // Full logging of requests and responses for debugging
+    // Secure logging: only in DEBUG, redact Authorization and passwords, no println
     private val loggingInterceptor = HttpLoggingInterceptor { message ->
-        Log.d(TAG, message)
-        // Also print to stderr/stdout for local test execution logs
-        println("[HTTP] $message")
+        if (com.example.BuildConfig.DEBUG) {
+            val sanitized = if (message.contains("password", ignoreCase = true)) {
+                message
+                    .replace(Regex("""("password"\s*:\s*")[^"]+(")"""), """$1[REDACTED]$2""")
+                    .replace(Regex("""(password=[^& ]+)"""), "password=[REDACTED]")
+            } else {
+                message
+            }
+            Log.d(TAG, sanitized)
+        }
     }.apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        redactHeader("Authorization")
+        level = if (com.example.BuildConfig.DEBUG) {
+            HttpLoggingInterceptor.Level.BODY
+        } else {
+            HttpLoggingInterceptor.Level.NONE
+        }
     }
 
-    // Interceptor: Adds User-Agent, Origin, Referer, Accept, and Bearer token (except login)
+    // Interceptor: Adds honest User-Agent and Bearer token (except login)
     private val authAndHeadersInterceptor = Interceptor { chain ->
         val original = chain.request()
         val requestBuilder = original.newBuilder()
             .header("User-Agent", USER_AGENT)
             .header("Accept", "application/json")
-            .header("Origin", "https://samad.app")
-            .header("Referer", "https://samad.app/")
 
         val urlPath = original.url.encodedPath
 

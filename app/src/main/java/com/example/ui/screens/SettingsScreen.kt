@@ -53,6 +53,9 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Security
+import com.example.util.BiometricHelper
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -132,6 +135,7 @@ fun SettingsScreen(
     var tempGithubRepo by remember { mutableStateOf(uiState.githubRepo) }
     var showEditCustomSelfDialog by remember { mutableStateOf(false) }
     var tempCustomSelf by remember { mutableStateOf("") }
+    var showFriendWarningDialog by remember { mutableStateOf(false) }
 
     var breakfastStart by remember { mutableStateOf(prefs.breakfastStart) }
     var breakfastEnd by remember { mutableStateOf(prefs.breakfastEnd) }
@@ -311,6 +315,166 @@ fun SettingsScreen(
                                     checkedTrackColor = SamadPrimary
                                 )
                             )
+                        }
+                    }
+
+                    // Bento: Security & Privacy Card (Biometric Gate & Friend Reserve)
+                    Card(
+                        shape = RoundedCornerShape(22.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(SamadPrimary.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = SamadPrimary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "امنیت و حریم خصوصی",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "مدیریت احراز هویت و دسترسی‌های حساس",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Biometric Gate Toggle
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (uiState.isDarkMode) Color(0xFF1F3226) else Color(0xFFE8F5E9)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Fingerprint,
+                                            contentDescription = null,
+                                            tint = SamadPrimary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "قفل بیومتریک (اثر انگشت)",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "تأیید هویت قبل از ورود خودکار با رمز و نمایش بارکد غذا",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = uiState.biometricGateEnabled,
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked) {
+                                            if (BiometricHelper.isBiometricAvailable(context)) {
+                                                viewModel.setBiometricGateEnabled(true)
+                                            } else {
+                                                Toast.makeText(context, "قفل بیومتریک یا اثر انگشت روی این گوشی تعریف نشده است", Toast.LENGTH_LONG).show()
+                                            }
+                                        } else {
+                                            viewModel.setBiometricGateEnabled(false)
+                                        }
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = SamadPrimary
+                                    )
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Friend Reserve Feature Toggle
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (uiState.isDarkMode) Color(0xFF2E2619) else Color(0xFFFFF3E0)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.GroupAdd,
+                                            contentDescription = null,
+                                            tint = Color(0xFFF59E0B),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "استعلام ژتون از حساب دوستان",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "ورود موقت به حساب دوست جهت استعلام رزرو (پیش‌فرض: غیرفعال)",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = uiState.friendReserveFeatureEnabled,
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked) {
+                                            showFriendWarningDialog = true
+                                        } else {
+                                            viewModel.setFriendReserveFeatureEnabled(false)
+                                        }
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = SamadPrimary
+                                    )
+                                )
+                            }
                         }
                     }
 
@@ -1474,6 +1638,54 @@ fun SettingsScreen(
                     }
                 },
                 containerColor = SamadSurfaceContainerLowest,
+                shape = RoundedCornerShape(20.dp)
+            )
+        }
+    }
+
+    if (showFriendWarningDialog) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            AlertDialog(
+                onDismissRequest = { showFriendWarningDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.WarningAmber,
+                            contentDescription = null,
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("هشدار مهم امنیتی", fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Text(
+                        text = "استفاده از قابلیت دریافت ژتون مهمان مستلزم ورود موقت به سامانه با نام کاربری و کلمه عبور دوست شما است.\n\n" +
+                                "برای حفظ امنیت، رمز عبور هرگز ذخیره یا ثبت نمی‌شود و صرفاً در حافظه موقت برای همان تک درخواست استفاده شده و بلافاصله پاک خواهد شد.\n\n" +
+                                "آیا از فعال‌سازی این قابلیت اطمینان دارید؟",
+                        fontSize = 13.sp,
+                        lineHeight = 22.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.setFriendReserveFeatureEnabled(true)
+                            showFriendWarningDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = SamadPrimary),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("متوجه هستم و تأیید می‌کنم")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showFriendWarningDialog = false }) {
+                        Text("انصراف")
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(20.dp)
             )
         }

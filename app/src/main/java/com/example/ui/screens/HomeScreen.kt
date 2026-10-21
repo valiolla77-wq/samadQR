@@ -78,6 +78,8 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.window.Dialog
+import androidx.fragment.app.FragmentActivity
+import com.example.util.BiometricHelper
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.icons.filled.Fullscreen
 import com.example.util.UpdateCheckResult
@@ -173,31 +175,11 @@ fun HomeScreen(
     viewModel: MainViewModel,
     uiState: MainUiState,
     onNavigateToSettings: () -> Unit,
-    onNavigateToAllReserves: () -> Unit,
-    onNavigateToMessenger: () -> Unit = {}
+    onNavigateToAllReserves: () -> Unit
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showAddFriendReserveDialog by remember { mutableStateOf(false) }
-
-    // Screen brightness & keep-screen-on when showing QR
-    val hasQrCode = !uiState.activeReserve?.forgotCardCode.isNullOrBlank()
-    DisposableEffect(hasQrCode) {
-        val activity = context as? Activity
-        val originalBrightness = activity?.window?.attributes?.screenBrightness
-        if (hasQrCode) {
-            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            val layout = activity?.window?.attributes
-            layout?.screenBrightness = 1.0f
-            activity?.window?.attributes = layout
-        }
-        onDispose {
-            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            val layout = activity?.window?.attributes
-            layout?.screenBrightness = originalBrightness ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-            activity?.window?.attributes = layout
-        }
-    }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
@@ -224,8 +206,7 @@ fun HomeScreen(
                         onRefresh = { viewModel.fetchReserves(isManualRefresh = true) },
                         onToggleDarkMode = { viewModel.toggleDarkMode() },
                         onNavigateToAllReserves = onNavigateToAllReserves,
-                        onNavigateToSettings = onNavigateToSettings,
-                        onNavigateToMessenger = onNavigateToMessenger
+                        onNavigateToSettings = onNavigateToSettings
                     )
                 },
                 containerColor = Color.Transparent
@@ -450,8 +431,7 @@ private fun HomeTopBar(
     onRefresh: () -> Unit,
     onToggleDarkMode: () -> Unit,
     onNavigateToAllReserves: () -> Unit,
-    onNavigateToSettings: () -> Unit,
-    onNavigateToMessenger: () -> Unit
+    onNavigateToSettings: () -> Unit
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "spin")
     val rotation by infiniteTransition.animateFloat(
@@ -1057,6 +1037,19 @@ private fun HeroActiveReserveCard(
 
     var showFullscreenDialog by remember { mutableStateOf(false) }
 
+    val requestFullscreen: () -> Unit = {
+        if (prefs.biometricGateEnabled && context is FragmentActivity) {
+            BiometricHelper.showBiometricPrompt(
+                activity = context,
+                title = "تأیید هویت",
+                subtitle = "جهت نمایش بزرگنمایی بارکد، اثر انگشت خود را تأیید کنید",
+                onSuccess = { showFullscreenDialog = true }
+            )
+        } else {
+            showFullscreenDialog = true
+        }
+    }
+
     Card(
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = SamadSurfaceContainerLowest),
@@ -1322,7 +1315,7 @@ private fun HeroActiveReserveCard(
                     .border(3.dp, Color.White, RoundedCornerShape(18.dp))
                     .clickable {
                         if (qrBitmap != null) {
-                            showFullscreenDialog = true
+                            requestFullscreen()
                         }
                     }
                     .padding(8.dp),
@@ -1647,6 +1640,31 @@ private fun FullscreenBarcodeDialog(
     qrBitmap: android.graphics.Bitmap?,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+
+    // Increase brightness to max ONLY when fullscreen barcode zoom is active, restore on dismiss
+    DisposableEffect(Unit) {
+        var ctx = context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is Activity) break
+            ctx = ctx.baseContext
+        }
+        val activity = ctx as? Activity
+        val window = activity?.window
+        val originalBrightness = window?.attributes?.screenBrightness
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val layout = window?.attributes
+        layout?.screenBrightness = 1.0f
+        window?.attributes = layout
+
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            val l = window?.attributes
+            l?.screenBrightness = originalBrightness ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            window?.attributes = l
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -2268,7 +2286,7 @@ private fun AddFriendReserveDialog(
                             )
                         }
                     } else {
-                        // Quick Paste from Messenger
+                        // Quick Paste from Clipboard
                         val clipboardManager = LocalContext.current.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                         val clipboardText = remember {
                             try {
