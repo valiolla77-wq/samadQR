@@ -36,16 +36,16 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
@@ -74,16 +74,16 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
@@ -196,17 +196,3 @@ jobs:
 
             ### 🔒 اعتبارسنجی فایل‌ها و هش SHA-256:
             جهت اطمینان از سلامت و عدم تغییر فایل‌های نصبی، می‌توانید هش SHA-256 فایل دانلود شده را با مقادیر زیر بررسی نمایید:
-
-            ```
-            ${{ env.CHECKSUMS }}
-            ```
-
-            ### 📥 راهنمای فایل‌های نصبی:
-            - **`arm64-v8a`:** مناسب برای اکثر گوشی‌های هوشمند جدید (نسخه سبک و سریع).
-            - **`armeabi-v7a`:** مناسب برای دستگاه‌های قدیمی‌تر ۳۲ بیتی.
-            - **`universal`:** نسخه کامل و سازگار با تمام دستگاه‌ها.
-          files: |
-            release_assets/*.apk
-            release_assets/SHA256SUMS.txt
-          draft: false
-          prerelease: false
