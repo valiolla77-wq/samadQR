@@ -17,7 +17,7 @@ android {
     minSdk = 24
     targetSdk = 36
     versionCode = 6
-    versionName = "1.5.0"
+    versionName = "1.4.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     buildConfigField("String", "ALLOWED_UPDATE_REPO", "\"SamadFoodQR/app\"")
