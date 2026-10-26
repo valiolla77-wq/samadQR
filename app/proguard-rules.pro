@@ -18,12 +18,18 @@
 -keep class com.example.data.model.** { *; }
 -keep class com.example.data.remote.** { *; }
 
-# Retrofit rules
+# Retrofit and OkHttp rules
 -dontwarn retrofit2.**
 -keep class retrofit2.** { *; }
 -keepclasseswithmembers class * {
     @retrofit2.http.* <methods>;
 }
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**
+-keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
 
 # Room rules
 -keep class * extends androidx.room.RoomDatabase
