@@ -16,11 +16,11 @@ android {
     applicationId = "com.aistudio.samadfoodqr.vfcklz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 6
-    versionName = "1.4.5"
+    versionCode = 7
+    versionName = "1.6.0-beta1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    buildConfigField("String", "ALLOWED_UPDATE_REPO", "\"SamadFoodQR/app\"")
+    buildConfigField("String", "ALLOWED_UPDATE_REPO", "\"valiolla77-wq/samadQR\"")
   }
 
   splits {
@@ -34,10 +34,13 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
+      val customPath = System.getenv("KEYSTORE_PATH")
+      val keyFile = customPath?.let { file(it) } ?: file("${rootDir}/my-upload-key.jks")
+      val fallbackFile = file("${rootDir}/debug.keystore")
+      val resolvedFile = if (keyFile.exists()) keyFile else fallbackFile
+      storeFile = resolvedFile
       storePassword = System.getenv("STORE_PASSWORD") ?: "android"
-      keyAlias = "upload"
+      keyAlias = if (resolvedFile == keyFile) (System.getenv("KEY_ALIAS") ?: "upload") else "androiddebugkey"
       keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
     }
     create("debugConfig") {
