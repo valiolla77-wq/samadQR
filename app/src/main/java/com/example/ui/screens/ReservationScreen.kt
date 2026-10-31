@@ -232,8 +232,10 @@ fun ReservationScreen(
                         }
 
                         // 5. Food List for Selected Date
+                        val cleanSelectedDate = uiState.selectedReservationDate.trim().split(" ")[0].replace("/", "-")
                         val programsForDate = uiState.weeklyReservationPrograms.filter {
-                            it.date == uiState.selectedReservationDate
+                            val cleanItemDate = it.date.trim().split(" ")[0].replace("/", "-")
+                            cleanItemDate == cleanSelectedDate
                         }
 
                         if (uiState.isReservationLoading && programsForDate.isEmpty()) {

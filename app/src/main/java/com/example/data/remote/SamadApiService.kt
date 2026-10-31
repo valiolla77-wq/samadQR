@@ -66,4 +66,17 @@ interface SamadApiService {
         @retrofit2.http.Path("programId") programId: Long,
         @retrofit2.http.Body body: com.example.data.model.ReserveRequestBody
     ): okhttp3.ResponseBody
+
+    @retrofit2.http.POST("rest/reserves/{programId}/reserve")
+    suspend fun executeReservePost(
+        @Header("Authorization") bearer: String = "",
+        @retrofit2.http.Path("programId") programId: Long,
+        @retrofit2.http.Body body: com.example.data.model.ReserveRequestBody
+    ): okhttp3.ResponseBody
+
+    @retrofit2.http.POST("rest/reserves")
+    suspend fun executeReserveDirectPost(
+        @Header("Authorization") bearer: String = "",
+        @retrofit2.http.Body body: com.example.data.model.ReserveDirectBody
+    ): okhttp3.ResponseBody
 }

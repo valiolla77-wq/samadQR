@@ -863,7 +863,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadReservationSelfsAndPrograms(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isReservationLoading = true) }
+            _uiState.update { it.copy(isReservationLoading = true, errorMessage = null) }
 
             // 1. Fetch available selfs if not loaded yet or forced
             var currentSelfs = _uiState.value.availableSelfs
@@ -895,9 +895,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val rawPrograms = payload?.selfWeekPrograms?.flatten() ?: emptyList()
                 val reservedIds = (payload?.userWeekReserves?.mapNotNull { it.programId } ?: emptyList()).toSet()
 
-                // Filter programs according to active meal settings in prefs
+                // Dynamically update available selfs if none loaded yet
+                val foundSelfNames = rawPrograms.mapNotNull { it.selfName?.takeIf { s -> s.isNotBlank() } }.distinct()
+                if (foundSelfNames.isNotEmpty() && (currentSelfs.isEmpty() || currentSelfs.size <= 1)) {
+                    currentSelfs = foundSelfNames.mapIndexed { idx, name ->
+                        com.example.data.model.SelfItem(id = idx + 1, name = name, selfType = "NORMAL")
+                    }
+                    _uiState.update { it.copy(availableSelfs = currentSelfs) }
+                }
+
+                // Filter programs according to active meal settings in prefs and selected self
                 val filtered = rawPrograms.filter { program ->
-                    MealTimeHelper.MealCategory.isMealTypeEnabled(
+                    val matchesSelf = if (currentSelfs.size > 1 && selectedSelf.name.isNotBlank()) {
+                        program.selfName.isNullOrBlank() || program.selfName == selectedSelf.name
+                    } else {
+                        true
+                    }
+                    matchesSelf && MealTimeHelper.MealCategory.isMealTypeEnabled(
                         mealTypeId = program.mealTypeId,
                         mealName = program.foodName,
                         prefs = prefs
@@ -906,13 +920,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 // If selectedReservationDate is blank or not in week, default to saturday or today
                 val todayStr = LocalDate.now().toString()
-                val initialDate = if (_uiState.value.selectedWeekOffset == 0) todayStr else saturday.toString()
+                val saturdayStr = saturday.toString()
+                val currentSelectedDate = _uiState.value.selectedReservationDate
+                val initialDate = when {
+                    _uiState.value.selectedWeekOffset == 0 && currentSelectedDate.isBlank() -> todayStr
+                    currentSelectedDate.isBlank() -> saturdayStr
+                    else -> currentSelectedDate
+                }
 
                 _uiState.update {
                     it.copy(
                         weeklyReservationPrograms = filtered,
                         reservedProgramIds = reservedIds,
-                        selectedReservationDate = if (it.selectedReservationDate.isBlank()) initialDate else it.selectedReservationDate,
+                        selectedReservationDate = initialDate,
                         isReservationLoading = false
                     )
                 }
@@ -936,12 +956,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectReservationWeekOffset(offset: Int) {
-        _uiState.update { it.copy(selectedWeekOffset = offset) }
+        val targetDate = LocalDate.now().plusWeeks(offset.toLong())
+        val saturday = PersianDateUtil.getWeekStartSaturday(targetDate)
+        val defaultDate = if (offset == 0) LocalDate.now().toString() else saturday.toString()
+        _uiState.update { it.copy(selectedWeekOffset = offset, selectedReservationDate = defaultDate) }
         loadReservationSelfsAndPrograms(forceRefresh = false)
     }
 
     fun selectReservationDate(date: String) {
-        _uiState.update { it.copy(selectedReservationDate = date) }
+        _uiState.update { it.copy(selectedReservationDate = date.trim().split(" ")[0].replace("/", "-")) }
     }
 
     fun onFoodClickForReservation(food: com.example.data.model.ProgramFoodItem) {

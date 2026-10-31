@@ -630,8 +630,24 @@ class SamadRepository(
         try {
             val token = ensureValidToken() ?: return@withContext Result.failure(Exception("نشست کاربری منقضی شده است"))
             val api = getApiService()
-            val resp = api.getNurtureProfile("Bearer $token")
-            val credit = resp.payload?.credit ?: 0L
+            val bearer = "Bearer $token"
+
+            // 1. Try GET /rest/users/nurture-profiles if available
+            try {
+                val resp = api.getNurtureProfile(bearer)
+                val credit = resp.payload?.credit
+                if (credit != null) {
+                    return@withContext Result.success(credit)
+                }
+            } catch (e: Exception) {
+                Log.d("SamadRepository", "getNurtureProfile not available, falling back to getReserves: ${e.message}")
+            }
+
+            // 2. Guaranteed fallback: GET /rest/reserves returns remainCredit
+            val today = LocalDate.now()
+            val weekStartStr = PersianDateUtil.getWeekStart(today)
+            val reservesResp = api.getReserves(bearer, weekStartStr)
+            val credit = reservesResp.payload?.remainCredit ?: 0L
             Result.success(credit)
         } catch (e: Exception) {
             Log.e("SamadRepository", "Failed to fetch live credit", e)
@@ -643,12 +659,60 @@ class SamadRepository(
         try {
             val token = ensureValidToken() ?: return@withContext Result.failure(Exception("نشست کاربری منقضی شده است"))
             val api = getApiService()
-            val resp = api.getAvailableSelfs("Bearer $token")
-            val list = resp.payload ?: emptyList()
+            val bearer = "Bearer $token"
+
+            // 1. Try GET /rest/reservations/selfs
+            try {
+                val resp = api.getAvailableSelfs(bearer)
+                val list = resp.payload
+                if (!list.isNullOrEmpty()) {
+                    return@withContext Result.success(list)
+                }
+            } catch (e: Exception) {
+                Log.d("SamadRepository", "getAvailableSelfs not available, extracting from weekly reserves: ${e.message}")
+            }
+
+            // 2. Fallback: extract distinct self names from weekly reserves
+            val today = LocalDate.now()
+            val weekStartStr = PersianDateUtil.getWeekStart(today)
+            val reservesResp = api.getReserves(bearer, weekStartStr)
+            val weekDays = reservesResp.payload?.weekDays ?: emptyList()
+
+            val selfNames = linkedSetOf<String>()
+            for (day in weekDays) {
+                for (slot in day.mealTypes) {
+                    val items = slot.reserves ?: listOfNotNull(slot.reserve)
+                    for (item in items) {
+                        if (item.selfName.isNotBlank()) {
+                            selfNames.add(item.selfName.trim())
+                        }
+                    }
+                }
+            }
+
+            if (selfNames.isEmpty()) {
+                val preferred = prefs.preferredSelfName?.takeIf { it.isNotBlank() } ?: "سلف مرکزی"
+                selfNames.add(preferred)
+            }
+
+            val list = selfNames.mapIndexed { index, name ->
+                com.example.data.model.SelfItem(
+                    id = index + 1,
+                    name = name,
+                    selfType = "NORMAL"
+                )
+            }
             Result.success(list)
         } catch (e: Exception) {
             Log.e("SamadRepository", "Failed to fetch available selfs", e)
-            Result.failure(e)
+            val fallback = listOf(
+                com.example.data.model.SelfItem(
+                    id = 1,
+                    name = prefs.preferredSelfName?.takeIf { it.isNotBlank() } ?: "سلف مرکزی",
+                    selfType = "NORMAL"
+                )
+            )
+            Result.success(fallback)
         }
     }
 
@@ -656,12 +720,112 @@ class SamadRepository(
         try {
             val token = ensureValidToken() ?: return@withContext Result.failure(Exception("نشست کاربری منقضی شده است"))
             val api = getApiService()
-            val formattedDate = weekStartDate.trim().split(" ")[0]
-            val resp = api.getReservePrograms("Bearer $token", selfId, formattedDate)
-            val payload = resp.payload ?: com.example.data.model.ReserveProgramPayload()
-            Result.success(payload)
+            val bearer = "Bearer $token"
+
+            // 1. Normalize weekStartDate to Saturday 00:00:00 with space as required by Samad API
+            val rawDate = weekStartDate.trim().split(" ")[0].replace("/", "-")
+            val targetLocalDate = try {
+                LocalDate.parse(rawDate)
+            } catch (_: Exception) {
+                LocalDate.now()
+            }
+            val weekStartFormatted = PersianDateUtil.getWeekStart(targetLocalDate)
+
+            Log.d("SamadRepository", "fetchWeeklyPrograms: calling getReserves with weekStart=$weekStartFormatted")
+
+            // 2. Call the working core Samad endpoint: GET rest/reserves
+            val reservesResp = api.getReserves(
+                bearer = bearer,
+                weekStart = weekStartFormatted
+            )
+
+            val payload = reservesResp.payload
+            val weekDays = payload?.weekDays ?: emptyList()
+
+            val programList = mutableListOf<com.example.data.model.ProgramFoodItem>()
+            val userReservesList = mutableListOf<com.example.data.model.UserWeekReserveItem>()
+
+            for (day in weekDays) {
+                val dateStr = day.date.trim().split(" ")[0].replace("/", "-")
+                val parsedDate = try { LocalDate.parse(dateStr) } catch (_: Exception) { LocalDate.now() }
+                val dayName = day.dayTranslated.ifBlank { PersianDateUtil.getDayOfWeekPersian(parsedDate) }
+
+                for (slot in day.mealTypes) {
+                    val slotReserves = slot.reserves ?: listOfNotNull(slot.reserve)
+                    for (r in slotReserves) {
+                        val progId = r.programId?.takeIf { it != 0L } ?: r.id ?: 0L
+                        if (progId == 0L && r.foodNames.isBlank()) continue
+
+                        val foodTitle = buildString {
+                            append(r.foodNames.trim())
+                            if (!r.besideFoodNames.isNullOrBlank()) {
+                                append(" (${r.besideFoodNames.trim()})")
+                            }
+                        }
+
+                        val sName = r.selfName.ifBlank { "سلف مرکزی" }
+                        val sId = r.selfCode.toIntOrNull() ?: (sName.hashCode().let { if (it < 0) -it else it } % 1000 + 1)
+
+                        val isBooked = r.selected == true ||
+                                slot.selected == true ||
+                                r.isReserved == true ||
+                                slot.isReserved == true ||
+                                r.hasReserve == true ||
+                                slot.hasReserve == true ||
+                                r.reserved == true ||
+                                r.canCancel == true ||
+                                r.consumed ||
+                                ((r.selectedCount ?: 0) > 0) ||
+                                ((r.count ?: 0) > 0)
+
+                        if (isBooked) {
+                            userReservesList.add(
+                                com.example.data.model.UserWeekReserveItem(
+                                    id = r.id,
+                                    foodId = r.id,
+                                    foodNames = foodTitle,
+                                    programDate = dateStr,
+                                    programId = progId,
+                                    mealTypeId = slot.mealTypeId,
+                                    price = r.price,
+                                    selfId = sId,
+                                    selfName = sName
+                                )
+                            )
+                        }
+
+                        programList.add(
+                            com.example.data.model.ProgramFoodItem(
+                                programId = progId,
+                                date = dateStr,
+                                dayTranslated = dayName,
+                                foodId = r.id ?: 0L,
+                                foodName = foodTitle,
+                                foodTypeId = 1,
+                                mealTypeId = slot.mealTypeId,
+                                price = r.price,
+                                selfId = sId,
+                                selfName = sName,
+                                reserveRuleViolated = r.canReserve == false && !isBooked,
+                                cancelRuleViolated = r.canCancel == false,
+                                daysDifferenceWithToday = r.timeDistanceUntilToday
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Group by date
+            val groupedPrograms = programList.groupBy { it.date }.values.toList()
+
+            val resultPayload = com.example.data.model.ReserveProgramPayload(
+                selfWeekPrograms = groupedPrograms,
+                userWeekReserves = userReservesList
+            )
+
+            Result.success(resultPayload)
         } catch (e: Exception) {
-            Log.e("SamadRepository", "Failed to fetch weekly reserve programs", e)
+            Log.e("SamadRepository", "Failed to fetch weekly reserve programs via rest/reserves", e)
             Result.failure(e)
         }
     }
@@ -675,6 +839,7 @@ class SamadRepository(
         try {
             val token = ensureValidToken() ?: return@withContext Result.failure(Exception("نشست کاربری منقضی شده است"))
             val api = getApiService()
+            val bearer = "Bearer $token"
             val body = com.example.data.model.ReserveRequestBody(
                 foodTypeId = foodTypeId,
                 mealTypeId = mealTypeId,
@@ -682,12 +847,59 @@ class SamadRepository(
                 freeFoodSelected = false,
                 selected = selected
             )
-            val response = api.executeReserve("Bearer $token", programId, body)
-            val responseStr = response.string()
-            Log.d("SamadRepository", "Reserve response: $responseStr")
-            // Refresh user reserves after reservation
-            fetchAndCacheReserves()
-            Result.success(true)
+
+            var success = false
+            var lastError: Exception? = null
+
+            // Method 1: PUT /rest/reserves/{programId}/reserve
+            try {
+                val response = api.executeReserve(bearer, programId, body)
+                Log.d("SamadRepository", "Reserve PUT response: ${response.string()}")
+                success = true
+            } catch (e: Exception) {
+                Log.w("SamadRepository", "PUT /rest/reserves/$programId/reserve failed: ${e.message}")
+                lastError = e
+            }
+
+            // Method 2: POST /rest/reserves/{programId}/reserve
+            if (!success) {
+                try {
+                    val response = api.executeReservePost(bearer, programId, body)
+                    Log.d("SamadRepository", "Reserve POST response: ${response.string()}")
+                    success = true
+                } catch (e: Exception) {
+                    Log.w("SamadRepository", "POST /rest/reserves/$programId/reserve failed: ${e.message}")
+                    lastError = e
+                }
+            }
+
+            // Method 3: POST /rest/reserves direct body
+            if (!success) {
+                try {
+                    val directBody = com.example.data.model.ReserveDirectBody(
+                        programId = programId,
+                        foodTypeId = foodTypeId,
+                        mealTypeId = mealTypeId,
+                        selectedCount = 1,
+                        freeFoodSelected = false,
+                        selected = selected
+                    )
+                    val response = api.executeReserveDirectPost(bearer, directBody)
+                    Log.d("SamadRepository", "Reserve Direct POST response: ${response.string()}")
+                    success = true
+                } catch (e: Exception) {
+                    Log.w("SamadRepository", "POST /rest/reserves direct failed: ${e.message}")
+                    lastError = e
+                }
+            }
+
+            if (success) {
+                // Refresh user reserves after reservation
+                fetchAndCacheReserves()
+                Result.success(true)
+            } else {
+                Result.failure(lastError ?: Exception("خطا در برقراری ارتباط با سامانه رزرو"))
+            }
         } catch (e: Exception) {
             Log.e("SamadRepository", "Failed to execute reserve", e)
             Result.failure(e)

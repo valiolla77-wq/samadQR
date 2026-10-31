@@ -98,3 +98,17 @@ data class ReserveRequestBody(
     @Json(name = "freeFoodSelected") val freeFoodSelected: Boolean = false,
     @Json(name = "selected") val selected: Boolean = true
 )
+
+/**
+ * Body for submitting a direct reservation to POST /rest/reserves
+ */
+@JsonClass(generateAdapter = true)
+data class ReserveDirectBody(
+    @Json(name = "programId") val programId: Long,
+    @Json(name = "foodTypeId") val foodTypeId: Int = 1,
+    @Json(name = "mealTypeId") val mealTypeId: Int = 2,
+    @Json(name = "selectedCount") val selectedCount: Int = 1,
+    @Json(name = "freeFoodSelected") val freeFoodSelected: Boolean = false,
+    @Json(name = "selected") val selected: Boolean = true
+)
+
