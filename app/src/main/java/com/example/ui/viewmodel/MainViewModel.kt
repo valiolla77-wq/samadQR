@@ -77,7 +77,24 @@ data class MainUiState(
     val knownSelfNames: Set<String> = emptySet(),
     val differentSelfWarning: String? = null,
     val biometricGateEnabled: Boolean = false,
-    val friendReserveFeatureEnabled: Boolean = false
+    val friendReserveFeatureEnabled: Boolean = false,
+    // Reservation module state
+    val userCredit: Long = 0L,
+    val isCreditLoading: Boolean = false,
+    val availableSelfs: List<com.example.data.model.SelfItem> = emptyList(),
+    val selectedReservationSelf: com.example.data.model.SelfItem? = null,
+    val weeklyReservationPrograms: List<com.example.data.model.ProgramFoodItem> = emptyList(),
+    val reservedProgramIds: Set<Long> = emptySet(),
+    val isReservationLoading: Boolean = false,
+    val pendingReserves: List<com.example.data.local.entity.PendingReserveEntity> = emptyList(),
+    val selectedWeekOffset: Int = 0,
+    val selectedReservationDate: String = "",
+    val isSubmittingReserve: Boolean = false,
+    val reserveActionMessage: String? = null,
+    val selectedFoodForInvoice: com.example.data.model.ProgramFoodItem? = null,
+    val invoiceDeficitAmount: Long = 0L,
+    val isInvoiceDialogOpen: Boolean = false,
+    val isDeficitDialogOpen: Boolean = false
 ) {
     val hasReservationForSelectedMeal: Boolean
         get() = dayReservesForMeal.isNotEmpty()
@@ -181,9 +198,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // If user already logged in and auto-sync on launch is enabled, perform initial sync
-        if (prefs.isTokenValid() && prefs.autoSyncOnLaunch) {
-            fetchReserves(isManualRefresh = false)
+        // Observe pending reserves
+        viewModelScope.launch {
+            repository.getAllPendingReserves().collect { pendingList ->
+                _uiState.update { it.copy(pendingReserves = pendingList) }
+            }
+        }
+
+        // If user already logged in, load live credit and reservation data
+        if (prefs.isTokenValid()) {
+            loadLiveCredit()
+            if (prefs.autoSyncOnLaunch) {
+                fetchReserves(isManualRefresh = false)
+            }
         }
     }
 
@@ -815,6 +842,268 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             diffSec < 86400 -> "${diffSec / 3600} ساعت پیش"
             else -> "${diffSec / 86400} روز پیش"
         }
+    }
+
+    // =========================================================================
+    // Food Reservation & Credit Module
+    // =========================================================================
+
+    fun loadLiveCredit() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isCreditLoading = true) }
+            val result = repository.fetchLiveCredit()
+            if (result.isSuccess) {
+                val credit = result.getOrDefault(0L)
+                _uiState.update { it.copy(userCredit = credit, isCreditLoading = false) }
+            } else {
+                _uiState.update { it.copy(isCreditLoading = false) }
+            }
+        }
+    }
+
+    fun loadReservationSelfsAndPrograms(forceRefresh: Boolean = false) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isReservationLoading = true) }
+
+            // 1. Fetch available selfs if not loaded yet or forced
+            var currentSelfs = _uiState.value.availableSelfs
+            if (currentSelfs.isEmpty() || forceRefresh) {
+                val selfsResult = repository.fetchAvailableSelfs()
+                if (selfsResult.isSuccess) {
+                    currentSelfs = selfsResult.getOrDefault(emptyList())
+                    _uiState.update { it.copy(availableSelfs = currentSelfs) }
+                }
+            }
+
+            // Determine active self for reservation
+            val selectedSelf = _uiState.value.selectedReservationSelf
+                ?: currentSelfs.find { it.name == prefs.preferredSelfName }
+                ?: currentSelfs.firstOrNull()
+                ?: com.example.data.model.SelfItem(id = 1, name = "سلف مرکزی")
+
+            _uiState.update { it.copy(selectedReservationSelf = selectedSelf) }
+
+            // 2. Compute week start date
+            val targetDate = LocalDate.now().plusWeeks(_uiState.value.selectedWeekOffset.toLong())
+            val saturday = PersianDateUtil.getWeekStartSaturday(targetDate)
+            val weekStartFormatted = PersianDateUtil.formatWeekStartDate(saturday)
+
+            // 3. Fetch programs
+            val programsResult = repository.fetchWeeklyPrograms(selectedSelf.id, weekStartFormatted)
+            if (programsResult.isSuccess) {
+                val payload = programsResult.getOrNull()
+                val rawPrograms = payload?.selfWeekPrograms?.flatten() ?: emptyList()
+                val reservedIds = (payload?.userWeekReserves?.mapNotNull { it.programId } ?: emptyList()).toSet()
+
+                // Filter programs according to active meal settings in prefs
+                val filtered = rawPrograms.filter { program ->
+                    MealTimeHelper.MealCategory.isMealTypeEnabled(
+                        mealTypeId = program.mealTypeId,
+                        mealName = program.foodName,
+                        prefs = prefs
+                    )
+                }
+
+                // If selectedReservationDate is blank or not in week, default to saturday or today
+                val todayStr = LocalDate.now().toString()
+                val initialDate = if (_uiState.value.selectedWeekOffset == 0) todayStr else saturday.toString()
+
+                _uiState.update {
+                    it.copy(
+                        weeklyReservationPrograms = filtered,
+                        reservedProgramIds = reservedIds,
+                        selectedReservationDate = if (it.selectedReservationDate.isBlank()) initialDate else it.selectedReservationDate,
+                        isReservationLoading = false
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isReservationLoading = false,
+                        errorMessage = "خطا در دریافت برنامه غذایی: ${programsResult.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+
+            // Also refresh credit in background
+            loadLiveCredit()
+        }
+    }
+
+    fun selectReservationSelf(self: com.example.data.model.SelfItem) {
+        _uiState.update { it.copy(selectedReservationSelf = self) }
+        loadReservationSelfsAndPrograms(forceRefresh = false)
+    }
+
+    fun selectReservationWeekOffset(offset: Int) {
+        _uiState.update { it.copy(selectedWeekOffset = offset) }
+        loadReservationSelfsAndPrograms(forceRefresh = false)
+    }
+
+    fun selectReservationDate(date: String) {
+        _uiState.update { it.copy(selectedReservationDate = date) }
+    }
+
+    fun onFoodClickForReservation(food: com.example.data.model.ProgramFoodItem) {
+        val currentCredit = _uiState.value.userCredit
+        val price = food.price
+        val deficit = if (price > currentCredit) (price - currentCredit) else 0L
+
+        if (deficit > 0L) {
+            _uiState.update {
+                it.copy(
+                    selectedFoodForInvoice = food,
+                    invoiceDeficitAmount = deficit,
+                    isDeficitDialogOpen = true,
+                    isInvoiceDialogOpen = false
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    selectedFoodForInvoice = food,
+                    invoiceDeficitAmount = 0L,
+                    isInvoiceDialogOpen = true,
+                    isDeficitDialogOpen = false
+                )
+            }
+        }
+    }
+
+    fun closeInvoiceDialog() {
+        _uiState.update { it.copy(isInvoiceDialogOpen = false, selectedFoodForInvoice = null) }
+    }
+
+    fun closeDeficitDialog() {
+        _uiState.update { it.copy(isDeficitDialogOpen = false, selectedFoodForInvoice = null) }
+    }
+
+    fun stagePendingReserve(food: com.example.data.model.ProgramFoodItem, deficit: Long) {
+        viewModelScope.launch {
+            val self = _uiState.value.selectedReservationSelf
+                ?: com.example.data.model.SelfItem(food.selfId, food.selfName ?: "سلف دانشگاه")
+            val mealName = MealTimeHelper.MealCategory.getMealTypeName(food.mealTypeId)
+            val entity = com.example.data.local.entity.PendingReserveEntity(
+                programId = food.programId,
+                foodName = food.foodName,
+                date = food.date,
+                mealTypeId = food.mealTypeId,
+                mealTypeName = mealName,
+                selfId = self.id,
+                selfName = self.name,
+                foodTypeId = food.foodTypeId,
+                price = food.price,
+                deficitAmount = deficit
+            )
+            repository.insertPendingReserve(entity)
+            _uiState.update {
+                it.copy(
+                    isDeficitDialogOpen = false,
+                    selectedFoodForInvoice = null,
+                    reserveActionMessage = "غذای «${food.foodName}» به بخش «در انتظار شارژ و تأیید» اضافه شد."
+                )
+            }
+        }
+    }
+
+    fun cancelPendingReserve(programId: Long) {
+        viewModelScope.launch {
+            repository.deletePendingReserve(programId)
+            _uiState.update {
+                it.copy(reserveActionMessage = "رزرو در انتظار لغو شد.")
+            }
+        }
+    }
+
+    fun confirmAndExecutePendingReserve(pending: com.example.data.local.entity.PendingReserveEntity) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmittingReserve = true, reserveActionMessage = null) }
+
+            // 1. Fetch live credit to check if user has recharged in main system
+            val creditResult = repository.fetchLiveCredit()
+            val freshCredit = creditResult.getOrDefault(_uiState.value.userCredit)
+            _uiState.update { it.copy(userCredit = freshCredit) }
+
+            if (freshCredit < pending.price) {
+                val remainingDeficit = pending.price - freshCredit
+                _uiState.update {
+                    it.copy(
+                        isSubmittingReserve = false,
+                        errorMessage = "موجودی حساب شما کافی نیست! لطفاً در سامانه دانشگاه حداقل مبلغ ${PersianDateUtil.toPersianDigits(String.format("%,d", remainingDeficit))} ریال شارژ نمایید و سپس مجدداً دکمه تأیید را بزنید."
+                    )
+                }
+                return@launch
+            }
+
+            // 2. Submit reservation to Samad server
+            val reserveResult = repository.executeFoodReserve(
+                programId = pending.programId,
+                foodTypeId = pending.foodTypeId,
+                mealTypeId = pending.mealTypeId,
+                selected = true
+            )
+
+            if (reserveResult.isSuccess) {
+                // Delete from pending
+                repository.deletePendingReserve(pending.programId)
+                // Refresh programs and credit
+                loadReservationSelfsAndPrograms(forceRefresh = false)
+                _uiState.update {
+                    it.copy(
+                        isSubmittingReserve = false,
+                        reserveActionMessage = "رزرو غذای «${pending.foodName}» در ${pending.selfName} با موفقیت در سامانه سماد ثبت شد!"
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isSubmittingReserve = false,
+                        errorMessage = "ثبت رزرو با خطا مواجه شد: ${reserveResult.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun executeDirectReserveFromInvoice(food: com.example.data.model.ProgramFoodItem) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmittingReserve = true, isInvoiceDialogOpen = false) }
+            val self = _uiState.value.selectedReservationSelf
+            val selfName = self?.name ?: "سلف"
+
+            val reserveResult = repository.executeFoodReserve(
+                programId = food.programId,
+                foodTypeId = food.foodTypeId,
+                mealTypeId = food.mealTypeId,
+                selected = true
+            )
+
+            if (reserveResult.isSuccess) {
+                loadReservationSelfsAndPrograms(forceRefresh = false)
+                _uiState.update {
+                    it.copy(
+                        isSubmittingReserve = false,
+                        selectedFoodForInvoice = null,
+                        reserveActionMessage = "رزرو «${food.foodName}» در $selfName با موفقیت ثبت شد."
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isSubmittingReserve = false,
+                        errorMessage = "خطا در ثبت رزرو: ${reserveResult.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearReserveActionMessage() {
+        _uiState.update { it.copy(reserveActionMessage = null) }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
     }
 }
 

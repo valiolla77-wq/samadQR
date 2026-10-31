@@ -28,9 +28,23 @@ import androidx.navigation.compose.rememberNavController
 import com.example.ui.screens.AllReservesScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LoginScreen
+import com.example.ui.screens.ReservationScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MainViewModel
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.ui.platform.testTag
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,55 +101,156 @@ fun SamadApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
+    val showBottomBar = currentRoute in listOf("home", "reservation", "settings")
+
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        NavHost(
-            navController = navController,
-            startDestination = startDestination,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            composable("login") {
-                LoginScreen(
-                    viewModel = viewModel,
-                    uiState = uiState,
-                    onLoginSuccess = {
-                        navController.navigate("home") {
-                            popUpTo("login") { inclusive = true }
+        Scaffold(
+            bottomBar = {
+                if (showBottomBar) {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = androidx.compose.ui.unit.Dp(8f),
+                        modifier = Modifier.testTag("main_bottom_nav_bar")
+                    ) {
+                        NavigationBarItem(
+                            selected = currentRoute == "home",
+                            onClick = {
+                                if (currentRoute != "home") {
+                                    navController.navigate("home") {
+                                        popUpTo("home") { inclusive = true }
+                                    }
+                                }
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Filled.QrCode2,
+                                    contentDescription = "میزکار و کارت"
+                                )
+                            },
+                            label = { Text("میزکار") },
+                            modifier = Modifier.testTag("nav_item_home")
+                        )
+
+                        NavigationBarItem(
+                            selected = currentRoute == "reservation",
+                            onClick = {
+                                if (currentRoute != "reservation") {
+                                    navController.navigate("reservation") {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            },
+                            icon = {
+                                val pendingCount = uiState.pendingReserves.size
+                                if (pendingCount > 0) {
+                                    BadgedBox(
+                                        badge = {
+                                            Badge {
+                                                Text(com.example.util.PersianDateUtil.toPersianDigits(pendingCount.toString()))
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.DateRange,
+                                            contentDescription = "رزرو غذا"
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.DateRange,
+                                        contentDescription = "رزرو غذا"
+                                    )
+                                }
+                            },
+                            label = { Text("رزرو غذا") },
+                            modifier = Modifier.testTag("nav_item_reservation")
+                        )
+
+                        NavigationBarItem(
+                            selected = currentRoute == "settings",
+                            onClick = {
+                                if (currentRoute != "settings") {
+                                    navController.navigate("settings") {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Settings,
+                                    contentDescription = "تنظیمات"
+                                )
+                            },
+                            label = { Text("تنظیمات") },
+                            modifier = Modifier.testTag("nav_item_settings")
+                        )
+                    }
+                }
+            }
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = startDestination,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                composable("login") {
+                    LoginScreen(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        onLoginSuccess = {
+                            navController.navigate("home") {
+                                popUpTo("login") { inclusive = true }
+                            }
                         }
-                    }
-                )
-            }
+                    )
+                }
 
-            composable("home") {
-                HomeScreen(
-                    viewModel = viewModel,
-                    uiState = uiState,
-                    onNavigateToSettings = { navController.navigate("settings") },
-                    onNavigateToAllReserves = { navController.navigate("all_reserves") }
-                )
-            }
+                composable("home") {
+                    HomeScreen(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        onNavigateToSettings = { navController.navigate("settings") },
+                        onNavigateToAllReserves = { navController.navigate("all_reserves") }
+                    )
+                }
 
-            composable("settings") {
-                SettingsScreen(
-                    viewModel = viewModel,
-                    uiState = uiState,
-                    onNavigateBack = { navController.popBackStack() },
-                    onLogoutDone = {
-                        navController.navigate("login") {
-                            popUpTo(0) { inclusive = true }
+                composable("reservation") {
+                    ReservationScreen(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        onNavigateBack = {
+                            navController.navigate("home") {
+                                popUpTo("home") { inclusive = true }
+                            }
                         }
-                    }
-                )
-            }
+                    )
+                }
 
-            composable("all_reserves") {
-                AllReservesScreen(
-                    uiState = uiState,
-                    onNavigateBack = { navController.popBackStack() },
-                    onSelectReserve = { date, mealTypeId ->
-                        viewModel.selectDate(date)
-                        viewModel.selectMealType(mealTypeId)
-                    }
-                )
+                composable("settings") {
+                    SettingsScreen(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        onNavigateBack = { navController.popBackStack() },
+                        onLogoutDone = {
+                            navController.navigate("login") {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+
+                composable("all_reserves") {
+                    AllReservesScreen(
+                        uiState = uiState,
+                        onNavigateBack = { navController.popBackStack() },
+                        onSelectReserve = { date, mealTypeId ->
+                            viewModel.selectDate(date)
+                            viewModel.selectMealType(mealTypeId)
+                        }
+                    )
+                }
             }
         }
     }

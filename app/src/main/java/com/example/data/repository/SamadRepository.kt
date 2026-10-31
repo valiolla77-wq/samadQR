@@ -609,6 +609,91 @@ class SamadRepository(
         }
     }
 
+    val pendingDao = db.pendingReserveDao()
+
+    fun getAllPendingReserves(): Flow<List<com.example.data.local.entity.PendingReserveEntity>> =
+        pendingDao.getAllPendingReserves()
+
+    suspend fun insertPendingReserve(entity: com.example.data.local.entity.PendingReserveEntity) = withContext(Dispatchers.IO) {
+        pendingDao.insertPending(entity)
+    }
+
+    suspend fun deletePendingReserve(programId: Long) = withContext(Dispatchers.IO) {
+        pendingDao.deletePending(programId)
+    }
+
+    suspend fun clearAllPendingReserves() = withContext(Dispatchers.IO) {
+        pendingDao.clearAll()
+    }
+
+    suspend fun fetchLiveCredit(): Result<Long> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureValidToken() ?: return@withContext Result.failure(Exception("نشست کاربری منقضی شده است"))
+            val api = getApiService()
+            val resp = api.getNurtureProfile("Bearer $token")
+            val credit = resp.payload?.credit ?: 0L
+            Result.success(credit)
+        } catch (e: Exception) {
+            Log.e("SamadRepository", "Failed to fetch live credit", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchAvailableSelfs(): Result<List<com.example.data.model.SelfItem>> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureValidToken() ?: return@withContext Result.failure(Exception("نشست کاربری منقضی شده است"))
+            val api = getApiService()
+            val resp = api.getAvailableSelfs("Bearer $token")
+            val list = resp.payload ?: emptyList()
+            Result.success(list)
+        } catch (e: Exception) {
+            Log.e("SamadRepository", "Failed to fetch available selfs", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchWeeklyPrograms(selfId: Int, weekStartDate: String): Result<com.example.data.model.ReserveProgramPayload> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureValidToken() ?: return@withContext Result.failure(Exception("نشست کاربری منقضی شده است"))
+            val api = getApiService()
+            val formattedDate = weekStartDate.trim().split(" ")[0]
+            val resp = api.getReservePrograms("Bearer $token", selfId, formattedDate)
+            val payload = resp.payload ?: com.example.data.model.ReserveProgramPayload()
+            Result.success(payload)
+        } catch (e: Exception) {
+            Log.e("SamadRepository", "Failed to fetch weekly reserve programs", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun executeFoodReserve(
+        programId: Long,
+        foodTypeId: Int,
+        mealTypeId: Int,
+        selected: Boolean = true
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureValidToken() ?: return@withContext Result.failure(Exception("نشست کاربری منقضی شده است"))
+            val api = getApiService()
+            val body = com.example.data.model.ReserveRequestBody(
+                foodTypeId = foodTypeId,
+                mealTypeId = mealTypeId,
+                selectedCount = 1,
+                freeFoodSelected = false,
+                selected = selected
+            )
+            val response = api.executeReserve("Bearer $token", programId, body)
+            val responseStr = response.string()
+            Log.d("SamadRepository", "Reserve response: $responseStr")
+            // Refresh user reserves after reservation
+            fetchAndCacheReserves()
+            Result.success(true)
+        } catch (e: Exception) {
+            Log.e("SamadRepository", "Failed to execute reserve", e)
+            Result.failure(e)
+        }
+    }
+
     suspend fun clearAllCachedReserves() = withContext(Dispatchers.IO) {
         dao.clearReserves()
         prefs.lastSyncTimestamp = 0L
@@ -619,6 +704,7 @@ class SamadRepository(
         prefs.clearAll()
         dao.clearReserves()
         dao.clearMealTypes()
+        pendingDao.clearAll()
         SamadFoodWidgetProvider.updateAllWidgets(context)
     }
 }

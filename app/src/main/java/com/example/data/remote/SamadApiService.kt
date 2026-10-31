@@ -42,4 +42,28 @@ interface SamadApiService {
         @Query("count") count: Int = 1,
         @Query("dailySale") dailySale: Boolean = false
     ): ForgotCodeResponse
+
+    @GET("rest/users/nurture-profiles")
+    suspend fun getNurtureProfile(
+        @Header("Authorization") bearer: String = ""
+    ): com.example.data.model.NurtureProfileResponse
+
+    @GET("rest/reservations/selfs")
+    suspend fun getAvailableSelfs(
+        @Header("Authorization") bearer: String = ""
+    ): com.example.data.model.SelfsResponse
+
+    @GET("rest/programs/v2")
+    suspend fun getReservePrograms(
+        @Header("Authorization") bearer: String = "",
+        @Query("selfId") selfId: Int,
+        @Query(value = "weekStartDate", encoded = true) weekStart: String
+    ): com.example.data.model.ReserveProgramResponse
+
+    @retrofit2.http.PUT("rest/reserves/{programId}/reserve")
+    suspend fun executeReserve(
+        @Header("Authorization") bearer: String = "",
+        @retrofit2.http.Path("programId") programId: Long,
+        @retrofit2.http.Body body: com.example.data.model.ReserveRequestBody
+    ): okhttp3.ResponseBody
 }

@@ -30,6 +30,37 @@ object MealTimeHelper {
                     else -> UNKNOWN
                 }
             }
+
+            fun isMealTypeEnabled(mealTypeId: Int, mealName: String, prefs: SecurePrefs): Boolean {
+                val cat = fromName(mealName)
+                return when (cat) {
+                    BREAKFAST -> prefs.cafeteriaBreakfastEnabled
+                    LUNCH -> prefs.cafeteriaLunchEnabled
+                    DINNER -> prefs.cafeteriaDinnerEnabled
+                    IFTAR -> prefs.cafeteriaIftarEnabled
+                    SUHUR -> prefs.cafeteriaSuhurEnabled
+                    UNKNOWN -> when (mealTypeId) {
+                        1, 6 -> prefs.cafeteriaBreakfastEnabled
+                        2, 7 -> prefs.cafeteriaLunchEnabled
+                        3, 8 -> prefs.cafeteriaDinnerEnabled
+                        4, 10 -> prefs.cafeteriaSuhurEnabled
+                        5, 9 -> prefs.cafeteriaIftarEnabled
+                        else -> true
+                    }
+                }
+            }
+
+            fun getMealTypeName(mealTypeId: Int, fallbackName: String = ""): String {
+                if (fallbackName.isNotBlank()) return fallbackName
+                return when (mealTypeId) {
+                    1, 6 -> "صبحانه"
+                    2, 7 -> "ناهار"
+                    3, 8 -> "شام"
+                    4, 10 -> "سحری"
+                    5, 9 -> "افطاری"
+                    else -> "ناهار"
+                }
+            }
         }
     }
 
