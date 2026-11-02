@@ -1069,23 +1069,37 @@ fun SettingsScreen(
                                                     Text("گیت‌هاب", fontSize = 11.sp)
                                                 }
                                                 Spacer(modifier = Modifier.width(8.dp))
-                                                Button(
-                                                    onClick = {
-                                                        val asset = updateResult.apkAsset
-                                                        if (asset != null) {
-                                                            viewModel.downloadAndInstallUpdate(context, updateResult.release, asset)
-                                                        } else {
-                                                            UpdateManager.openInBrowser(context, updateResult.release.htmlUrl)
-                                                        }
-                                                    },
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = SamadPrimary),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                                    modifier = Modifier.height(32.dp)
-                                                ) {
-                                                    Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(12.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("دانلود و نصب مستقیم", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                if (uiState.downloadedApkFile != null && uiState.downloadedApkFile.exists()) {
+                                                    Button(
+                                                        onClick = { viewModel.installDownloadedUpdate(context) },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                        modifier = Modifier.height(32.dp)
+                                                    ) {
+                                                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("نصب فایل آماده", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                } else {
+                                                    Button(
+                                                        onClick = {
+                                                            val asset = updateResult.apkAsset
+                                                            if (asset != null) {
+                                                                viewModel.downloadAndInstallUpdate(context, updateResult.release, asset)
+                                                            } else {
+                                                                UpdateManager.openInBrowser(context, updateResult.release.htmlUrl)
+                                                            }
+                                                        },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = SamadPrimary),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                        modifier = Modifier.height(32.dp)
+                                                    ) {
+                                                        Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("دانلود و نصب مستقیم", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
                                                 }
                                             }
                                         }

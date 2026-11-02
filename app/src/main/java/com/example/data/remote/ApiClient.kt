@@ -20,6 +20,11 @@ object ApiClient {
      */
     var tokenProvider: (() -> String?)? = null
 
+    /**
+     * Provider lambda to re-authenticate and return a fresh bearer token on HTTP 401
+     */
+    var reLoginProvider: (() -> String?)? = null
+
     private val moshi: Moshi = Moshi.Builder()
         .addLast(KotlinJsonAdapterFactory())
         .build()
@@ -71,17 +76,57 @@ object ApiClient {
         chain.proceed(requestBuilder.build())
     }
 
+    private val tokenAuthenticator = okhttp3.Authenticator { _, response ->
+        val path = response.request.url.encodedPath
+        // Do not attempt re-login if the failing request was oauth/token itself
+        if (path.contains("oauth/token")) {
+            return@Authenticator null
+        }
+
+        // Avoid infinite retry loops: max 2 prior responses
+        var prior = response.priorResponse
+        var retryCount = 0
+        while (prior != null) {
+            retryCount++
+            prior = prior.priorResponse
+        }
+        if (retryCount >= 2) {
+            if (com.example.BuildConfig.DEBUG) {
+                Log.w(TAG, "Authenticator: Giving up after $retryCount 401 retries on $path")
+            }
+            return@Authenticator null
+        }
+
+        val newToken = reLoginProvider?.invoke()
+        if (newToken.isNullOrBlank()) {
+            return@Authenticator null
+        }
+
+        val bearerToken = if (newToken.startsWith("Bearer ")) newToken else "Bearer $newToken"
+        response.request.newBuilder()
+            .header("Authorization", bearerToken)
+            .build()
+    }
+
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(authAndHeadersInterceptor)
         .addInterceptor(loggingInterceptor)
+        .authenticator(tokenAuthenticator)
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    fun createService(baseUrl: String, tokenProvider: (() -> String?)? = null): SamadApiService {
+    fun createService(
+        baseUrl: String,
+        tokenProvider: (() -> String?)? = null,
+        reLoginProvider: (() -> String?)? = null
+    ): SamadApiService {
         if (tokenProvider != null) {
             this.tokenProvider = tokenProvider
+        }
+        if (reLoginProvider != null) {
+            this.reLoginProvider = reLoginProvider
         }
         val normalizedUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
         return Retrofit.Builder()

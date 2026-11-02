@@ -36,8 +36,53 @@ class SamadRepository(
 ) {
     private val dao = db.reserveDao()
 
+    private val reLoginLock = Any()
+
+    /**
+     * Synchronous re-login callback invoked by ApiClient.tokenAuthenticator on HTTP 401
+     */
+    fun reLoginSync(): String? {
+        synchronized(reLoginLock) {
+            val username = prefs.username
+            val password = prefs.password
+            if (username.isNullOrBlank() || password.isNullOrBlank()) {
+                Log.w("SamadRepository", "reLoginSync: No stored credentials available for auto-re-login")
+                return null
+            }
+            return try {
+                val api = getApiService()
+                val tokenResp = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                    api.login(
+                        username = username.trim(),
+                        password = password.trim()
+                    )
+                }
+                val token = tokenResp.accessToken
+                if (token.isNotBlank()) {
+                    prefs.accessToken = token
+                    val expSec = tokenResp.expiresIn
+                    val expiryMs = if (expSec > 0) {
+                        System.currentTimeMillis() + (expSec * 1000L) - 30_000L
+                    } else {
+                        System.currentTimeMillis() + (2L * 3600 * 1000L) - 30_000L
+                    }
+                    prefs.tokenExpiryTimestamp = expiryMs
+                    Log.d("SamadRepository", "reLoginSync: Successfully renewed bearer token via Authenticator")
+                    token
+                } else null
+            } catch (e: Exception) {
+                Log.e("SamadRepository", "reLoginSync failed: ${e.message}")
+                null
+            }
+        }
+    }
+
     private fun getApiService(): SamadApiService {
-        return ApiClient.createService(prefs.baseUrl) { prefs.accessToken }
+        return ApiClient.createService(
+            baseUrl = prefs.baseUrl,
+            tokenProvider = { prefs.accessToken },
+            reLoginProvider = { reLoginSync() }
+        )
     }
 
     fun getAllCachedReserves(): Flow<List<CachedReserveEntity>> = dao.getAllReserves()
@@ -54,11 +99,12 @@ class SamadRepository(
 
             val token = tokenResp.accessToken
             prefs.accessToken = token
-            // expires_in in seconds -> convert to ms
-            val expiryMs = if (tokenResp.expiresIn > 0) {
-                System.currentTimeMillis() + (tokenResp.expiresIn * 1000L)
+            // expires_in in seconds -> convert to ms with buffer
+            val expSec = tokenResp.expiresIn
+            val expiryMs = if (expSec > 0) {
+                System.currentTimeMillis() + (expSec * 1000L) - 30_000L
             } else {
-                System.currentTimeMillis() + (180L * 24 * 3600 * 1000L)
+                System.currentTimeMillis() + (2L * 3600 * 1000L) - 30_000L
             }
             prefs.tokenExpiryTimestamp = expiryMs
             prefs.username = usernameInput.trim()
@@ -89,11 +135,13 @@ class SamadRepository(
         }
     }
 
-    suspend fun ensureValidToken(): String? = withContext(Dispatchers.IO) {
+    suspend fun ensureValidToken(forceRefresh: Boolean = false): String? = withContext(Dispatchers.IO) {
         val currentToken = prefs.accessToken
-        if (prefs.isTokenValid() && !currentToken.isNullOrBlank()) {
+        if (!forceRefresh && prefs.isTokenValid() && !currentToken.isNullOrBlank()) {
             return@withContext currentToken
         }
+
+        prefs.invalidateToken()
 
         // Try re-login if credentials are saved
         val username = prefs.username
@@ -104,6 +152,19 @@ class SamadRepository(
         }
 
         null
+    }
+
+    fun formatErrorMessage(e: Throwable): String {
+        val msg = e.message ?: ""
+        return when {
+            msg.contains("401") || (e is retrofit2.HttpException && e.code() == 401) ->
+                "نشست کاربری شما در سامانه سماد منقضی شده است. لطفاً مجدداً وارد حساب خود شوید."
+            msg.contains("404") || (e is retrofit2.HttpException && e.code() == 404) ->
+                "اطلاعات مورد نظر در سامانه سماد یافت نشد."
+            msg.contains("Unable to resolve host") || msg.contains("ConnectException") || msg.contains("SocketTimeoutException") ->
+                "خطا در برقراری ارتباط با سرور سماد. لطفاً وضعیت اینترنت خود را بررسی نمایید."
+            else -> e.localizedMessage ?: "خطای ناشناخته در ارتباط با سرور سماد"
+        }
     }
 
     /**
@@ -651,7 +712,7 @@ class SamadRepository(
             Result.success(credit)
         } catch (e: Exception) {
             Log.e("SamadRepository", "Failed to fetch live credit", e)
-            Result.failure(e)
+            Result.failure(Exception(formatErrorMessage(e)))
         }
     }
 
@@ -870,7 +931,7 @@ class SamadRepository(
             Result.success(resultPayload)
         } catch (e: Exception) {
             Log.e("SamadRepository", "Failed to fetch weekly reserve programs via rest/reserves", e)
-            Result.failure(e)
+            Result.failure(Exception(formatErrorMessage(e)))
         }
     }
 

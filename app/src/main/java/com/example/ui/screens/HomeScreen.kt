@@ -240,6 +240,8 @@ fun HomeScreen(
                                     update = updateResult,
                                     isDownloading = uiState.isDownloadingUpdate,
                                     downloadProgress = uiState.downloadProgress,
+                                    hasDownloadedApk = uiState.downloadedApkFile != null && uiState.downloadedApkFile.exists(),
+                                    onInstallClick = { viewModel.installDownloadedUpdate(context) },
                                     onDownloadClick = { asset ->
                                         if (asset != null) {
                                             viewModel.downloadAndInstallUpdate(context, updateResult.release, asset)
@@ -2629,6 +2631,8 @@ private fun HomeUpdateBanner(
     update: UpdateCheckResult.UpdateAvailable,
     isDownloading: Boolean,
     downloadProgress: Float,
+    hasDownloadedApk: Boolean = false,
+    onInstallClick: () -> Unit = {},
     onDownloadClick: (com.example.data.model.GitHubAsset?) -> Unit,
     onOpenBrowser: () -> Unit,
     onDismiss: () -> Unit
@@ -2749,23 +2753,44 @@ private fun HomeUpdateBanner(
                         Text("صفحه گیت‌هاب", fontSize = 11.sp)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = { onDownloadClick(update.apkAsset) },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = SamadPrimary,
-                            contentColor = Color.White
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(34.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("دانلود و نصب مستقیم", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (hasDownloadedApk) {
+                        Button(
+                            onClick = onInstallClick,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF16A34A),
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("نصب فایل آماده", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = { onDownloadClick(update.apkAsset) },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SamadPrimary,
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("دانلود و نصب مستقیم", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

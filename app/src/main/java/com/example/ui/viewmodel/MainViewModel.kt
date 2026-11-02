@@ -69,6 +69,7 @@ data class MainUiState(
     val updateCheckResult: UpdateCheckResult? = null,
     val isDownloadingUpdate: Boolean = false,
     val downloadProgress: Float = 0f,
+    val downloadedApkFile: java.io.File? = null,
     val githubRepo: String = "valiolla77-wq/samadQR",
     val autoCheckUpdates: Boolean = true,
     // Student Preferred Cafeteria state
@@ -811,13 +812,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(
                             isDownloadingUpdate = false,
                             downloadProgress = 1f,
-                            infoMessage = "دانلود کامل شد. در حال باز کردن نصاب برنامه..."
+                            downloadedApkFile = apkFile,
+                            infoMessage = "دانلود فایل بروزرسانی با موفقیت انجام شد."
                         )
                     }
                     val installResult = UpdateManager.installApk(context, apkFile)
                     if (installResult.isFailure) {
+                        val errMsg = installResult.exceptionOrNull()?.message ?: "خطا در باز کردن نصاب برنامه"
                         _uiState.update {
-                            it.copy(errorMessage = "خطا در اجرای نصاب: ${installResult.exceptionOrNull()?.message}")
+                            it.copy(errorMessage = errMsg)
                         }
                     }
                 },
@@ -830,6 +833,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             )
+        }
+    }
+
+    fun installDownloadedUpdate(context: Context) {
+        val apk = _uiState.value.downloadedApkFile ?: run {
+            val updatesDir = java.io.File(context.filesDir, "updates")
+            updatesDir.listFiles()?.filter { it.extension == "apk" }?.maxByOrNull { it.lastModified() }
+        }
+        if (apk != null && apk.exists()) {
+            val result = UpdateManager.installApk(context, apk)
+            if (result.isFailure) {
+                _uiState.update {
+                    it.copy(errorMessage = result.exceptionOrNull()?.message ?: "خطا در اجرای نصاب برنامه")
+                }
+            } else {
+                _uiState.update {
+                    it.copy(infoMessage = "در حال باز کردن نصاب اندروید...")
+                }
+            }
+        } else {
+            _uiState.update {
+                it.copy(errorMessage = "فایل نصبی یافت نشد. لطفاً مجدداً دانلود را انجام دهید.")
+            }
         }
     }
 

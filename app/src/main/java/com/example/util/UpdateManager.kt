@@ -281,17 +281,26 @@ object UpdateManager {
     fun installApk(context: Context, apkFile: File): Result<Unit> {
         return try {
             if (!apkFile.exists() || apkFile.length() == 0L) {
-                return Result.failure(Exception("فایل نصبی یافت نشد"))
+                return Result.failure(Exception("فایل نصبی یافت نشد یا ناقص دانلود شده است."))
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!context.packageManager.canRequestPackageInstalls()) {
-                    val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    try {
+                        val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(settingsIntent)
+                    } catch (_: Exception) {
+                        try {
+                            val generalSettings = Intent(Settings.ACTION_SECURITY_SETTINGS).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            context.startActivity(generalSettings)
+                        } catch (_: Exception) {}
                     }
-                    context.startActivity(settingsIntent)
-                    return Result.failure(SecurityException("لطفاً در صفحه تنظیمات بازشده، اجازه نصب برنامه را فعال نمایید."))
+                    return Result.failure(SecurityException("لطفاً در صفحه تنظیمات بازشده، اجازه نصب برنامه را فعال نموده و سپس مجدداً دکمه «نصب برنامه» را لمس کنید."))
                 }
             }
 
@@ -303,8 +312,22 @@ object UpdateManager {
 
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                clipData = android.content.ClipData.newRawUri("APK", uri)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             }
+
+            val resInfoList = context.packageManager.queryIntentActivities(
+                intent,
+                android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+            )
+            for (resolveInfo in resInfoList) {
+                val pkgName = resolveInfo.activityInfo.packageName
+                context.grantUriPermission(pkgName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
             context.startActivity(intent)
             Result.success(Unit)
         } catch (e: Exception) {

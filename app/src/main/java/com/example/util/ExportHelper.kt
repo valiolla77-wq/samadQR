@@ -82,16 +82,20 @@ object ExportHelper {
                 if (imageUri != null) {
                     type = "image/png"
                     putExtra(Intent.EXTRA_STREAM, imageUri)
+                    clipData = android.content.ClipData.newRawUri("QR Code", imageUri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } else {
                     type = "text/plain"
                 }
                 putExtra(Intent.EXTRA_TEXT, shareText)
                 putExtra(Intent.EXTRA_SUBJECT, "ژتون غذای ${reserve.mealName} - ${reserve.dayName}")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
-            val chooser = Intent.createChooser(intent, "اشتراک‌گذاری ژتون غذا")
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val chooser = Intent.createChooser(intent, "اشتراک‌گذاری ژتون غذا").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             context.startActivity(chooser)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -428,13 +432,16 @@ object ExportHelper {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, pdfUri)
+                clipData = android.content.ClipData.newRawUri("PDF Document", pdfUri)
                 putExtra(Intent.EXTRA_SUBJECT, "ژتون‌های کارتی غذای دانشگاه - $weekTitle")
                 putExtra(Intent.EXTRA_TEXT, "فایل PDF ژتون‌های کارتی رزرو غذای هفته ($weekTitle)")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
-            val chooser = Intent.createChooser(intent, "اشتراک‌گذاری یا چاپ PDF ژتون‌ها")
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val chooser = Intent.createChooser(intent, "اشتراک‌گذاری یا چاپ PDF ژتون‌ها").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             context.startActivity(chooser)
             Toast.makeText(context, "فایل PDF کارتی با موفقیت آماده شد", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {

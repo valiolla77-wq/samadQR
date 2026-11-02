@@ -27,7 +27,7 @@ class SecurePrefs(context: Context) {
         set(value) = prefs.edit().putString(KEY_PASSWORD, value).apply()
 
     var rememberPassword: Boolean
-        get() = prefs.getBoolean(KEY_REMEMBER_PW, false)
+        get() = prefs.getBoolean(KEY_REMEMBER_PW, true)
         set(value) = prefs.edit().putBoolean(KEY_REMEMBER_PW, value).apply()
 
     var baseUrl: String
@@ -230,7 +230,12 @@ class SecurePrefs(context: Context) {
         val token = accessToken
         if (token.isNullOrBlank()) return false
         val expiry = tokenExpiryTimestamp
-        return expiry == 0L || System.currentTimeMillis() < expiry
+        return expiry > 0L && System.currentTimeMillis() < expiry
+    }
+
+    fun invalidateToken() {
+        accessToken = null
+        tokenExpiryTimestamp = 0L
     }
 
     fun clearAll() {
