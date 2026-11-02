@@ -750,67 +750,111 @@ class SamadRepository(
                 val parsedDate = try { LocalDate.parse(dateStr) } catch (_: Exception) { LocalDate.now() }
                 val dayName = day.dayTranslated.ifBlank { PersianDateUtil.getDayOfWeekPersian(parsedDate) }
 
+                // Check if Breakfast is present in this day's slots
+                val hasBreakfastSlot = day.mealTypes.any { it.mealTypeId == 1 || it.mealTypeId == 6 || it.name.contains("صبحانه") }
+                if (!hasBreakfastSlot && prefs.cafeteriaBreakfastEnabled) {
+                    val bProgId = kotlin.math.abs((dateStr.hashCode().toLong() shl 16) or 6L).coerceAtLeast(1L)
+                    programList.add(
+                        com.example.data.model.ProgramFoodItem(
+                            programId = bProgId,
+                            date = dateStr,
+                            dayTranslated = dayName,
+                            foodId = 0L,
+                            foodName = "رزرو وعده صبحانه",
+                            foodTypeId = 1,
+                            mealTypeId = 6, // Breakfast
+                            price = 100000L,
+                            selfId = selfId.coerceAtLeast(1),
+                            selfName = prefs.preferredSelfName?.takeIf { it.isNotBlank() } ?: "سلف مرکزی",
+                            reserveRuleViolated = false,
+                            cancelRuleViolated = false,
+                            daysDifferenceWithToday = 0
+                        )
+                    )
+                }
+
                 for (slot in day.mealTypes) {
                     val slotReserves = slot.reserves ?: listOfNotNull(slot.reserve)
-                    for (r in slotReserves) {
-                        val progId = r.programId?.takeIf { it != 0L } ?: r.id ?: 0L
-                        if (progId == 0L && r.foodNames.isBlank()) continue
+                    val slotMealName = slot.name.ifBlank { MealTimeHelper.MealCategory.getMealTypeName(slot.mealTypeId) }
 
-                        val foodTitle = buildString {
-                            append(r.foodNames.trim())
-                            if (!r.besideFoodNames.isNullOrBlank()) {
-                                append(" (${r.besideFoodNames.trim()})")
+                    if (slotReserves.isEmpty()) {
+                        // Unreserved slot: ensure this meal (e.g. Breakfast, Lunch, Dinner) is visible and reservable!
+                        val dummyProgramId = kotlin.math.abs((dateStr.hashCode().toLong() shl 16) or slot.mealTypeId.toLong()).coerceAtLeast(1L)
+                        val defaultPrice = if (slot.mealTypeId == 1 || slot.mealTypeId == 6) 100000L else 150000L
+                        programList.add(
+                            com.example.data.model.ProgramFoodItem(
+                                programId = dummyProgramId,
+                                date = dateStr,
+                                dayTranslated = dayName,
+                                foodId = 0L,
+                                foodName = "رزرو وعده $slotMealName",
+                                foodTypeId = 1,
+                                mealTypeId = slot.mealTypeId,
+                                price = defaultPrice,
+                                selfId = selfId.coerceAtLeast(1),
+                                selfName = prefs.preferredSelfName?.takeIf { it.isNotBlank() } ?: "سلف مرکزی",
+                                reserveRuleViolated = false,
+                                cancelRuleViolated = false,
+                                daysDifferenceWithToday = 0
+                            )
+                        )
+                    } else {
+                        for (r in slotReserves) {
+                            val progId = r.programId?.takeIf { it != 0L } ?: r.id ?: 0L
+                            if (progId == 0L && r.foodNames.isBlank()) continue
+
+                            val foodTitle = buildString {
+                                append(r.foodNames.trim().ifBlank { "وعده $slotMealName" })
+                                if (!r.besideFoodNames.isNullOrBlank()) {
+                                    append(" (${r.besideFoodNames.trim()})")
+                                }
                             }
-                        }
 
-                        val sName = r.selfName.ifBlank { "سلف مرکزی" }
-                        val sId = r.selfCode.toIntOrNull() ?: (sName.hashCode().let { if (it < 0) -it else it } % 1000 + 1)
+                            val sName = r.selfName.ifBlank { prefs.preferredSelfName?.takeIf { it.isNotBlank() } ?: "سلف مرکزی" }
+                            val sId = r.selfCode.toIntOrNull() ?: (sName.hashCode().let { if (it < 0) -it else it } % 1000 + 1)
 
-                        val isBooked = r.selected == true ||
-                                slot.selected == true ||
-                                r.isReserved == true ||
-                                slot.isReserved == true ||
-                                r.hasReserve == true ||
-                                slot.hasReserve == true ||
-                                r.reserved == true ||
-                                r.canCancel == true ||
-                                r.consumed ||
-                                ((r.selectedCount ?: 0) > 0) ||
-                                ((r.count ?: 0) > 0)
+                            // CRITICAL: isBooked must ONLY be true if this specific food was actually selected/booked!
+                            val isBooked = r.selected == true ||
+                                    r.isReserved == true ||
+                                    r.reserved == true ||
+                                    r.canCancel == true ||
+                                    ((r.selectedCount ?: 0) > 0) ||
+                                    ((r.count ?: 0) > 0)
 
-                        if (isBooked) {
-                            userReservesList.add(
-                                com.example.data.model.UserWeekReserveItem(
-                                    id = r.id,
-                                    foodId = r.id,
-                                    foodNames = foodTitle,
-                                    programDate = dateStr,
+                            if (isBooked) {
+                                userReservesList.add(
+                                    com.example.data.model.UserWeekReserveItem(
+                                        id = r.id,
+                                        foodId = r.id,
+                                        foodNames = foodTitle,
+                                        programDate = dateStr,
+                                        programId = progId,
+                                        mealTypeId = slot.mealTypeId,
+                                        price = r.price,
+                                        selfId = sId,
+                                        selfName = sName
+                                    )
+                                )
+                            }
+
+                            programList.add(
+                                com.example.data.model.ProgramFoodItem(
                                     programId = progId,
+                                    date = dateStr,
+                                    dayTranslated = dayName,
+                                    foodId = r.id ?: 0L,
+                                    foodName = foodTitle,
+                                    foodTypeId = 1,
                                     mealTypeId = slot.mealTypeId,
-                                    price = r.price,
+                                    price = if (r.price > 0L) r.price else (if (slot.mealTypeId == 1 || slot.mealTypeId == 6) 100000L else 150000L),
                                     selfId = sId,
-                                    selfName = sName
+                                    selfName = sName,
+                                    reserveRuleViolated = r.canReserve == false && !isBooked,
+                                    cancelRuleViolated = r.canCancel == false,
+                                    daysDifferenceWithToday = r.timeDistanceUntilToday
                                 )
                             )
                         }
-
-                        programList.add(
-                            com.example.data.model.ProgramFoodItem(
-                                programId = progId,
-                                date = dateStr,
-                                dayTranslated = dayName,
-                                foodId = r.id ?: 0L,
-                                foodName = foodTitle,
-                                foodTypeId = 1,
-                                mealTypeId = slot.mealTypeId,
-                                price = r.price,
-                                selfId = sId,
-                                selfName = sName,
-                                reserveRuleViolated = r.canReserve == false && !isBooked,
-                                cancelRuleViolated = r.canCancel == false,
-                                daysDifferenceWithToday = r.timeDistanceUntilToday
-                            )
-                        )
                     }
                 }
             }

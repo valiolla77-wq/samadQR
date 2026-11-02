@@ -119,7 +119,7 @@ class SecurePrefs(context: Context) {
 
     // Cafeteria active meals (filter out meals not served by university cafeteria)
     var cafeteriaBreakfastEnabled: Boolean
-        get() = prefs.getBoolean("cafeteria_breakfast_enabled", false)
+        get() = prefs.getBoolean("cafeteria_breakfast_enabled", true)
         set(value) = prefs.edit().putBoolean("cafeteria_breakfast_enabled", value).apply()
 
     var cafeteriaLunchEnabled: Boolean

@@ -53,7 +53,7 @@ data class MainUiState(
     val autoSyncDaily: Boolean = true,
     val autoSyncOnLaunch: Boolean = true,
     val remindersEnabled: Boolean = true,
-    val cafeteriaBreakfastEnabled: Boolean = false,
+    val cafeteriaBreakfastEnabled: Boolean = true,
     val cafeteriaLunchEnabled: Boolean = true,
     val cafeteriaDinnerEnabled: Boolean = true,
     val cafeteriaSuhurEnabled: Boolean = false,

@@ -22,7 +22,7 @@ object MealTimeHelper {
         companion object {
             fun fromName(name: String): MealCategory {
                 return when {
-                    name.contains("صبحانه") -> BREAKFAST
+                    name.contains("صبحانه") || name.contains("تخم مرغ") || name.contains("پنیر") || name.contains("مربا") || name.contains("کره") || name.contains("عدسی") || name.contains("حلوا") -> BREAKFAST
                     name.contains("ناهار") -> LUNCH
                     name.contains("شام") -> DINNER
                     name.contains("افطار") -> IFTAR
@@ -32,6 +32,13 @@ object MealTimeHelper {
             }
 
             fun isMealTypeEnabled(mealTypeId: Int, mealName: String, prefs: SecurePrefs): Boolean {
+                when (mealTypeId) {
+                    1, 6 -> return prefs.cafeteriaBreakfastEnabled
+                    2, 7 -> return prefs.cafeteriaLunchEnabled
+                    3, 8 -> return prefs.cafeteriaDinnerEnabled
+                    4, 10 -> return prefs.cafeteriaSuhurEnabled
+                    5, 9 -> return prefs.cafeteriaIftarEnabled
+                }
                 val cat = fromName(mealName)
                 return when (cat) {
                     BREAKFAST -> prefs.cafeteriaBreakfastEnabled
@@ -39,14 +46,7 @@ object MealTimeHelper {
                     DINNER -> prefs.cafeteriaDinnerEnabled
                     IFTAR -> prefs.cafeteriaIftarEnabled
                     SUHUR -> prefs.cafeteriaSuhurEnabled
-                    UNKNOWN -> when (mealTypeId) {
-                        1, 6 -> prefs.cafeteriaBreakfastEnabled
-                        2, 7 -> prefs.cafeteriaLunchEnabled
-                        3, 8 -> prefs.cafeteriaDinnerEnabled
-                        4, 10 -> prefs.cafeteriaSuhurEnabled
-                        5, 9 -> prefs.cafeteriaIftarEnabled
-                        else -> true
-                    }
+                    UNKNOWN -> true
                 }
             }
 

@@ -743,6 +743,7 @@ fun FoodProgramCard(
         ),
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(enabled = !isReserved && !food.reserveRuleViolated) { onReserveClick() }
             .testTag("food_card_${food.programId}")
     ) {
         Column(
@@ -868,9 +869,19 @@ fun FoodProgramCard(
                         Button(
                             onClick = onReserveClick,
                             enabled = !food.reserveRuleViolated,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.testTag("reserve_btn_${food.programId}")
                         ) {
+                            Icon(
+                                imageVector = Icons.Filled.Restaurant,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "انتخاب و رزرو",
                                 style = MaterialTheme.typography.labelMedium,
