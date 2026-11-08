@@ -28,7 +28,6 @@ import androidx.navigation.compose.rememberNavController
 import com.example.ui.screens.AllReservesScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LoginScreen
-import com.example.ui.screens.ReservationScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MainViewModel
@@ -101,7 +100,7 @@ fun SamadApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    val showBottomBar = currentRoute in listOf("home", "reservation", "settings")
+    val showBottomBar = currentRoute in listOf("home", "settings")
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
@@ -129,41 +128,6 @@ fun SamadApp(viewModel: MainViewModel = viewModel()) {
                             },
                             label = { Text("میزکار") },
                             modifier = Modifier.testTag("nav_item_home")
-                        )
-
-                        NavigationBarItem(
-                            selected = currentRoute == "reservation",
-                            onClick = {
-                                if (currentRoute != "reservation") {
-                                    navController.navigate("reservation") {
-                                        launchSingleTop = true
-                                    }
-                                }
-                            },
-                            icon = {
-                                val pendingCount = uiState.pendingReserves.size
-                                if (pendingCount > 0) {
-                                    BadgedBox(
-                                        badge = {
-                                            Badge {
-                                                Text(com.example.util.PersianDateUtil.toPersianDigits(pendingCount.toString()))
-                                            }
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.DateRange,
-                                            contentDescription = "رزرو غذا"
-                                        )
-                                    }
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Filled.DateRange,
-                                        contentDescription = "رزرو غذا"
-                                    )
-                                }
-                            },
-                            label = { Text("رزرو غذا") },
-                            modifier = Modifier.testTag("nav_item_reservation")
                         )
 
                         NavigationBarItem(
@@ -213,18 +177,6 @@ fun SamadApp(viewModel: MainViewModel = viewModel()) {
                         uiState = uiState,
                         onNavigateToSettings = { navController.navigate("settings") },
                         onNavigateToAllReserves = { navController.navigate("all_reserves") }
-                    )
-                }
-
-                composable("reservation") {
-                    ReservationScreen(
-                        viewModel = viewModel,
-                        uiState = uiState,
-                        onNavigateBack = {
-                            navController.navigate("home") {
-                                popUpTo("home") { inclusive = true }
-                            }
-                        }
                     )
                 }
 

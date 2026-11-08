@@ -16,6 +16,10 @@ class UpdateManagerTest {
         assertTrue(UpdateManager.isNewerVersion("1.4.1", "1.4.2"))
         assertTrue(UpdateManager.isNewerVersion("1.4.1", "v1.5.0"))
         assertTrue(UpdateManager.isNewerVersion("1.2.0", "v1.2.0.1"))
+        // Beta to stable comparisons
+        assertTrue(UpdateManager.isNewerVersion("1.6.0-beta4", "v1.6.0"))
+        assertTrue(UpdateManager.isNewerVersion("1.6.0-beta4", "v1.6.1"))
+        assertTrue(UpdateManager.isNewerVersion("1.6.0-beta3", "1.6.0-beta4"))
     }
 
     @Test
@@ -25,6 +29,9 @@ class UpdateManagerTest {
         assertFalse(UpdateManager.isNewerVersion("1.4.1", "1.4.1"))
         assertFalse(UpdateManager.isNewerVersion("2.0.0", "1.9.9"))
         assertFalse(UpdateManager.isNewerVersion("1.5.0", "v1.4.9"))
+        // Stable to beta or older
+        assertFalse(UpdateManager.isNewerVersion("1.6.0", "1.6.0-beta4"))
+        assertFalse(UpdateManager.isNewerVersion("1.6.1", "1.6.0"))
     }
 
     @Test

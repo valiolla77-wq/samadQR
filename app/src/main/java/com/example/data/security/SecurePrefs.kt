@@ -278,12 +278,17 @@ class SecurePrefs(context: Context) {
             return try {
                 buildEncryptedSharedPreferences(appContext)
             } catch (e: Exception) {
+                Log.w("SecurePrefs", "EncryptedSharedPreferences init failed on first attempt: ${e.message}. Attempting purge and recreate...")
                 // Keyset or encrypted prefs file was corrupted. Purge corrupted files and recreate cleanly.
                 purgeCorruptedPrefsFiles(appContext)
                 try {
                     buildEncryptedSharedPreferences(appContext)
                 } catch (e2: Exception) {
-                    throw SecurityException("Secure storage initialization failed; user re-login required", e2)
+                    // On certain devices with hardware Keystore/Knox issues (e.g. Samsung Galaxy M12 / Exynos 850),
+                    // KeyStore AES256_GCM fails to generate key pairs.
+                    // Fall back gracefully to standard private SharedPreferences so the app never crashes on launch!
+                    Log.e("SecurePrefs", "EncryptedSharedPreferences failed after purge. Falling back to standard private SharedPreferences to prevent crash: ${e2.message}", e2)
+                    appContext.getSharedPreferences("samad_prefs_safe", Context.MODE_PRIVATE)
                 }
             }
         }

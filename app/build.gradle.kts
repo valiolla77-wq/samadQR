@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.samadfoodqr.vfcklz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 10
-    versionName = "1.6.0-beta4"
+    versionCode = 11
+    versionName = "1.6.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     buildConfigField("String", "ALLOWED_UPDATE_REPO", "\"valiolla77-wq/samadQR\"")

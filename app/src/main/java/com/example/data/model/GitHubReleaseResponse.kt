@@ -11,12 +11,32 @@ data class GitHubRelease(
     @Json(name = "body") val body: String? = null,
     @Json(name = "html_url") val htmlUrl: String = "",
     @Json(name = "published_at") val publishedAt: String? = null,
+    @Json(name = "draft") val draft: Boolean = false,
     @Json(name = "prerelease") val prerelease: Boolean = false,
     @Json(name = "assets") val assets: List<GitHubAsset> = emptyList()
 ) {
     val apkAsset: GitHubAsset?
-        get() = assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
-            ?: assets.firstOrNull()
+        get() = getBestApkAsset()
+
+    fun getBestApkAsset(): GitHubAsset? {
+        val apkList = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
+        if (apkList.isEmpty()) return assets.firstOrNull()
+        if (apkList.size == 1) return apkList.first()
+
+        // Match device supported ABIs in order of preference (e.g. Samsung M12 on 32-bit prefers armeabi-v7a)
+        val supportedAbis = android.os.Build.SUPPORTED_ABIS.map { it.lowercase() }
+        for (abi in supportedAbis) {
+            val matching = apkList.firstOrNull { it.name.lowercase().contains(abi) }
+            if (matching != null) return matching
+        }
+
+        // If no exact ABI match found, look for universal APK
+        val universal = apkList.firstOrNull { it.name.contains("universal", ignoreCase = true) }
+        if (universal != null) return universal
+
+        // Fallback to any APK
+        return apkList.first()
+    }
 
     val displayVersion: String
         get() = tagName.removePrefix("v").removePrefix("V")

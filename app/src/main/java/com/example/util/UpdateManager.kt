@@ -73,7 +73,13 @@ object UpdateManager {
             if (BuildConfig.DEBUG) {
                 Log.d(TAG, "Checking update for $owner/$repo against current version $currentVersionName")
             }
-            val release = apiService.getLatestRelease(owner, repo)
+            // Try to get all releases (both stable and prereleases), find first non-draft release
+            val release = try {
+                val allReleases = apiService.getAllReleases(owner, repo)
+                allReleases.firstOrNull { !it.draft } ?: apiService.getLatestRelease(owner, repo)
+            } catch (_: Exception) {
+                apiService.getLatestRelease(owner, repo)
+            }
             val remoteTag = release.tagName.ifBlank { release.name ?: "" }
 
             if (isNewerVersion(currentVersionName, remoteTag)) {
@@ -97,43 +103,64 @@ object UpdateManager {
                 Log.w(TAG, "Update check failed: ${e.message}")
             }
             val msg = when {
-                e.message?.contains("404") == true -> "هنوز هیچ انتشار رسمی (Release) در مخزن ثبت نشده است"
-                e.message?.contains("403") == true -> "محدودیت نرخ دسترسی به گیت‌هاب؛ لطفاً کمی بعد تلاش کنید"
+                e.message?.contains("404") == true -> "هنوز هیچ نسخه رسمی (Release) در مخزن گیت‌هاب ثبت نشده است"
+                e.message?.contains("403") == true -> "محدودیت موقت دسترسی به گیت‌هاب؛ لطفاً کمی بعد مجدداً تلاش کنید"
                 else -> e.localizedMessage ?: "خطا در اتصال به سرور گیت‌هاب"
             }
             UpdateCheckResult.Error(msg)
         }
     }
 
-    /**
-     * Compares semantic versions (e.g. 1.2.0 vs 1.3.0 or v1.2.1)
-     */
-    fun isNewerVersion(current: String, remote: String): Boolean {
-        val cleanCurrent = cleanVersion(current)
-        val cleanRemote = cleanVersion(remote)
-
-        if (cleanCurrent.isBlank() || cleanRemote.isBlank()) return false
-        if (cleanCurrent == cleanRemote) return false
-
-        val currentParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
-        val remoteParts = cleanRemote.split(".").mapNotNull { it.toIntOrNull() }
-
-        val maxLen = maxOf(currentParts.size, remoteParts.size)
-        for (i in 0 until maxLen) {
-            val c = currentParts.getOrElse(i) { 0 }
-            val r = remoteParts.getOrElse(i) { 0 }
-            if (r > c) return true
-            if (r < c) return false
+    data class ParsedVersion(
+        val parts: List<Int>,
+        val isPrerelease: Boolean,
+        val prereleaseType: String = "",
+        val prereleaseNum: Int = 0
+    ) : Comparable<ParsedVersion> {
+        override fun compareTo(other: ParsedVersion): Int {
+            val maxLen = maxOf(parts.size, other.parts.size)
+            for (i in 0 until maxLen) {
+                val a = parts.getOrElse(i) { 0 }
+                val b = other.parts.getOrElse(i) { 0 }
+                if (a != b) return a.compareTo(b)
+            }
+            // If core numbers are equal: stable release has higher precedence than prerelease
+            if (!isPrerelease && other.isPrerelease) return 1
+            if (isPrerelease && !other.isPrerelease) return -1
+            if (isPrerelease && other.isPrerelease) {
+                if (prereleaseType != other.prereleaseType) {
+                    return prereleaseType.compareTo(other.prereleaseType)
+                }
+                return prereleaseNum.compareTo(other.prereleaseNum)
+            }
+            return 0
         }
-        return false
     }
 
-    private fun cleanVersion(version: String): String {
-        return version.trim()
-            .removePrefix("v")
-            .removePrefix("V")
-            .split("-")[0]
-            .split("+")[0]
+    fun parseVersion(raw: String): ParsedVersion? {
+        val clean = raw.trim().removePrefix("v").removePrefix("V")
+        if (clean.isBlank()) return null
+        val parts = clean.split("-", limit = 2)
+        val numericParts = parts[0].split(".").mapNotNull { it.toIntOrNull() }
+        if (numericParts.isEmpty()) return null
+
+        if (parts.size == 1) {
+            return ParsedVersion(numericParts, isPrerelease = false)
+        }
+
+        val preStr = parts[1].lowercase()
+        val preDigits = preStr.filter { it.isDigit() }.toIntOrNull() ?: 0
+        val preType = preStr.filter { it.isLetter() }.ifBlank { "beta" }
+        return ParsedVersion(numericParts, isPrerelease = true, prereleaseType = preType, prereleaseNum = preDigits)
+    }
+
+    /**
+     * Compares semantic versions (e.g. 1.6.0-beta4 vs 1.6.1 or v1.6.0)
+     */
+    fun isNewerVersion(current: String, remote: String): Boolean {
+        val curr = parseVersion(current) ?: return false
+        val rem = parseVersion(remote) ?: return false
+        return rem > curr
     }
 
     /**
