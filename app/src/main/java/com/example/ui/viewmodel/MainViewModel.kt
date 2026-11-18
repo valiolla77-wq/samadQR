@@ -110,7 +110,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(
         MainUiState(
-            isLoggedIn = prefs.isTokenValid() || !prefs.username.isNullOrBlank(),
+            isLoggedIn = prefs.isTokenValid(),
             studentName = prefs.studentName,
             studentNumber = prefs.studentNumber,
             studentMajor = prefs.studentMajor,
@@ -240,7 +240,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = "ورود ناموفق بود. نام کاربری یا رمز عبور اشتباه است یا سامانه در دسترس نیست."
+                        errorMessage = repository.formatLoginErrorMessage(result.exceptionOrNull())
                     )
                 }
             }

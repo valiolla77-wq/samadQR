@@ -20,7 +20,7 @@ interface SamadApiService {
         @Field("username") username: String,
         @Field("password") password: String,
         @Field("grant_type") grantType: String = "password",
-        @Field("scope") scope: String = "read+write"
+        @Field("scope") scope: String = "read write"
     ): TokenResponse
 
     @GET("rest/users/me")

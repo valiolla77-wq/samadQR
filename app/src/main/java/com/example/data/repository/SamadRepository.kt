@@ -89,13 +89,63 @@ class SamadRepository(
 
     fun getAllCachedMealTypes(): Flow<List<CachedMealTypeEntity>> = dao.getAllMealTypes()
 
+    private fun normalizeDigits(input: String): String {
+        val sb = StringBuilder(input.length)
+        for (ch in input) {
+            when (ch) {
+                in '۰'..'۹' -> sb.append(('0'.code + (ch.code - '۰'.code)).toChar())
+                in '٠'..'٩' -> sb.append(('0'.code + (ch.code - '٠'.code)).toChar())
+                else -> sb.append(ch)
+            }
+        }
+        return sb.toString()
+    }
+
+    /**
+     * Persian/Arabic keyboards type passwords with ۰-۹ / ٠-٩ digits. The Samad server
+     * compares the raw string, so such a password is always rejected with invalid_grant.
+     * Only convert when the whole password is made of Persian/Arabic digits, so real
+     * passwords that intentionally contain those characters stay untouched.
+     */
+    private fun normalizeDigitOnlyPassword(input: String): String {
+        val converted = normalizeDigits(input)
+        return if (converted != input && converted.isNotEmpty() && converted.all { it in '0'..'9' }) {
+            converted
+        } else {
+            input
+        }
+    }
+
+    /** Username cleanup: digits, invisible RTL marks and stray whitespace. */
+    private fun normalizeUsername(input: String): String {
+        return normalizeDigits(input)
+            .replace("\u200c", "")
+            .replace("\u200e", "")
+            .replace("\u200f", "")
+            .replace("\u202a", "")
+            .replace("\u202b", "")
+            .replace("\u202c", "")
+            .trim()
+    }
+
     suspend fun login(usernameInput: String, passwordInput: String, remember: Boolean): Result<String> = withContext(Dispatchers.IO) {
         try {
+            val cleanUser = normalizeUsername(usernameInput)
+            val typedPass = passwordInput.trim()
             val api = getApiService()
-            val tokenResp = api.login(
-                username = usernameInput.trim(),
-                password = passwordInput.trim()
-            )
+            var usedPass = typedPass
+            val tokenResp = try {
+                api.login(username = cleanUser, password = typedPass)
+            } catch (e: retrofit2.HttpException) {
+                // Persian-digit password fallback: retry once with Latin digits
+                val retryPass = normalizeDigitOnlyPassword(typedPass)
+                if ((e.code() == 400 || e.code() == 401) && retryPass != typedPass) {
+                    usedPass = retryPass
+                    api.login(username = cleanUser, password = retryPass)
+                } else {
+                    throw e
+                }
+            }
 
             val token = tokenResp.accessToken
             prefs.accessToken = token
@@ -107,10 +157,10 @@ class SamadRepository(
                 System.currentTimeMillis() + (2L * 3600 * 1000L) - 30_000L
             }
             prefs.tokenExpiryTimestamp = expiryMs
-            prefs.username = usernameInput.trim()
+            prefs.username = cleanUser
             prefs.rememberPassword = remember
             if (remember) {
-                prefs.password = passwordInput.trim()
+                prefs.password = usedPass
             } else {
                 prefs.password = null
             }
@@ -132,6 +182,57 @@ class SamadRepository(
         } catch (e: Exception) {
             Log.e("SamadRepository", "Login failed", e)
             Result.failure(e)
+        }
+    }
+
+    fun formatLoginErrorMessage(e: Throwable?): String {
+        if (e == null) {
+            return "ورود ناموفق بود. لطفاً اتصال اینترنت و اطلاعات حساب خود را بررسی کنید."
+        }
+        val baseUrl = prefs.baseUrl.removeSuffix("/")
+        if (e is retrofit2.HttpException) {
+            val code = e.code()
+            val errBody = try { e.response()?.errorBody()?.string() ?: "" } catch (_: Throwable) { "" }
+            return when {
+                code == 400 || code == 401 || errBody.contains("invalid_grant", ignoreCase = true) ||
+                    errBody.contains("Bad credentials", ignoreCase = true) ->
+                    "شماره دانشجویی یا رمز عبور اشتباه است."
+                code == 403 ->
+                    "دسترسی توسط سرور سماد مسدود شده است (کد ۴۰۳)."
+                code == 404 ->
+                    "آدرس ورود در سرور ($baseUrl) یافت نشد (کد ۴۰۴). آدرس سرور را بررسی کنید."
+                code >= 500 ->
+                    "سرور سامانه سماد موقتاً دچار اختلال است (کد $code)."
+                else ->
+                    "خطا در ورود به سامانه (کد $code)."
+            }
+        }
+        return when {
+            e is java.net.SocketTimeoutException ->
+                "اتصال به سرور سماد ($baseUrl) به پایان زمان رسید (Timeout). دسترسی شبکه فعلی به سرور دانشگاه ممکن است مسدود باشد یا سرور پاسخ نمی‌دهد."
+            e is java.net.UnknownHostException ->
+                "سرور سماد ($baseUrl) یافت نشد. اتصال اینترنت یا آدرس سرور را بررسی کنید."
+            e is java.net.ConnectException ->
+                "امکان برقراری ارتباط با سرور سماد ($baseUrl) وجود ندارد."
+            e is javax.net.ssl.SSLException || e is java.security.cert.CertificateException -> {
+                val causes = generateSequence(e as Throwable?) { it.cause }.toList()
+                val detail = when {
+                    causes.any { it is java.security.cert.CertificateExpiredException } ->
+                        "تاریخ گواهی سرور منقضی شده است."
+                    causes.any { it is java.security.cert.CertificateNotYetValidException } ->
+                        "تاریخ/ساعت گوشی با گواهی سرور هم‌خوان نیست؛ ساعت دستگاه را درست کنید."
+                    causes.any { it.message?.contains("Trust anchor", ignoreCase = true) == true } ->
+                        "زنجیره‌ی گواهی سرور روی این گوشی شناخته نمی‌شود (گواهی ریشه نصب نیست)."
+                    causes.any { it is javax.net.ssl.SSLPeerUnverifiedException } ->
+                        "گواهی با دامنه‌ی $baseUrl مطابقت ندارد؛ احتمالاً VPN/پروکسی ارتباط را رمزگشایی می‌کند."
+                    else -> e.message ?: "خطای نامشخص TLS."
+                }
+                "خطای امنیتی اتصال (SSL) به $baseUrl: $detail"
+            }
+            else -> {
+                val msg = e.localizedMessage?.takeIf { it.isNotBlank() }
+                if (msg != null) "خطای ورود: $msg" else "ورود ناموفق بود. لطفاً مجدداً تلاش کنید."
+            }
         }
     }
 

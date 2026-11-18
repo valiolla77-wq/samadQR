@@ -5,10 +5,24 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!-- Samad universities: some servers chain to "Certum Trusted Root CA".
+         Older Android images (and devices without CA-store updates) do not ship
+         that root, which makes OkHttp fail with an SSL error while the browser
+         (Chrome Root Store) still works. The root + its DV intermediate are
+         bundled here and trusted for these domains only. -->
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">saba.tvu.ac.ir</domain>
         <domain includeSubdomains="true">tvu.ac.ir</domain>
         <domain includeSubdomains="true">samad.app</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/certum_trusted_root_ca" />
+            <certificates src="@raw/certum_dv_tls_g2_r39_ca" />
+        </trust-anchors>
+    </domain-config>
+
+    <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">github.com</domain>
         <domain includeSubdomains="true">githubusercontent.com</domain>
         <trust-anchors>
